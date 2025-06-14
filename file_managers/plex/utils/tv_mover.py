@@ -1,0 +1,709 @@
+"""TV show episode organization and moving utilities."""
+
+import argparse
+import os
+import shutil
+from pathlib import Path
+from typing import List, Dict, NamedTuple, Optional, Tuple
+from collections import defaultdict
+
+from .tv_scanner import (
+    TV_DIRECTORIES,
+    extract_tv_info_from_filename,
+    is_video_file,
+    format_file_size,
+    normalize_show_name
+)
+
+
+class EpisodeMove(NamedTuple):
+    """Represents a planned episode move operation."""
+    source_path: Path
+    target_path: Path
+    show_name: str
+    season: int
+    episode: int
+    size: int
+    action: str  # 'move_to_existing' or 'create_folder_and_move'
+
+
+class SmallFolder(NamedTuple):
+    """Represents a small folder that can be deleted."""
+    path: Path
+    size: int
+    file_count: int
+
+
+class TVMoveAnalysis(NamedTuple):
+    """Results of TV directory analysis for moves."""
+    moves: List[EpisodeMove]
+    existing_show_folders: Dict[str, Path]
+    new_folders_needed: List[str]
+    small_folders: List[SmallFolder]
+    total_episodes: int
+    total_size: int
+
+
+def find_existing_show_folders(directory: str) -> Dict[str, Path]:
+    """
+    Find existing TV show folders in a directory.
+    
+    Args:
+        directory: Path to TV directory to scan
+        
+    Returns:
+        Dictionary mapping normalized show names to their folder paths
+    """
+    show_folders = {}
+    directory_path = Path(directory)
+    
+    if not directory_path.exists():
+        return show_folders
+    
+    try:
+        for item in directory_path.iterdir():
+            if item.is_dir():
+                # Normalize the folder name to match against episode show names
+                normalized_name = normalize_show_name(item.name)
+                show_folders[normalized_name] = item
+    except PermissionError:
+        pass
+    
+    return show_folders
+
+
+def find_loose_episodes(directory: str) -> List[Tuple[Path, str, int, int]]:
+    """
+    Find TV episodes that are loose (not in show folders).
+    
+    Args:
+        directory: Path to TV directory to scan
+        
+    Returns:
+        List of tuples: (file_path, show_name, season, episode)
+    """
+    loose_episodes = []
+    directory_path = Path(directory)
+    
+    if not directory_path.exists():
+        return loose_episodes
+    
+    try:
+        # Scan root level and immediate subdirectories that don't look like show folders
+        for item in directory_path.iterdir():
+            if item.is_file() and is_video_file(item):
+                # Check if it's a TV episode
+                tv_info = extract_tv_info_from_filename(item.name)
+                if tv_info:
+                    show_name, season, episode = tv_info
+                    loose_episodes.append((item, show_name, season, episode))
+            
+            elif item.is_dir():
+                # Check if this directory looks like a season folder (e.g., "Season 1", "S01")
+                dir_name_lower = item.name.lower()
+                if any(pattern in dir_name_lower for pattern in ['season', 'series', 's0', 's1', 's2']):
+                    # This might be a season folder outside a show folder
+                    for episode_file in item.rglob('*'):
+                        if episode_file.is_file() and is_video_file(episode_file):
+                            tv_info = extract_tv_info_from_filename(episode_file.name)
+                            if tv_info:
+                                show_name, season, episode = tv_info
+                                loose_episodes.append((episode_file, show_name, season, episode))
+                
+                # Also check one level deeper for loose episodes in non-show folders
+                else:
+                    try:
+                        for subitem in item.iterdir():
+                            if subitem.is_file() and is_video_file(subitem):
+                                tv_info = extract_tv_info_from_filename(subitem.name)
+                                if tv_info:
+                                    show_name, season, episode = tv_info
+                                    loose_episodes.append((subitem, show_name, season, episode))
+                    except PermissionError:
+                        continue
+    
+    except PermissionError:
+        pass
+    
+    return loose_episodes
+
+
+def find_small_folders(directory: str, max_size_mb: int = 100) -> List[SmallFolder]:
+    """
+    Find folders smaller than the specified size.
+    
+    Args:
+        directory: Path to TV directory to scan
+        max_size_mb: Maximum folder size in MB (default: 100MB)
+        
+    Returns:
+        List of SmallFolder objects
+    """
+    small_folders = []
+    directory_path = Path(directory)
+    max_size_bytes = max_size_mb * 1024 * 1024  # Convert MB to bytes
+    
+    if not directory_path.exists():
+        return small_folders
+    
+    try:
+        for item in directory_path.iterdir():
+            if item.is_dir():
+                try:
+                    # Calculate folder size recursively
+                    folder_size = 0
+                    file_count = 0
+                    
+                    for file_path in item.rglob('*'):
+                        if file_path.is_file():
+                            try:
+                                folder_size += file_path.stat().st_size
+                                file_count += 1
+                            except (OSError, PermissionError):
+                                continue
+                    
+                    # Only consider folders smaller than max_size
+                    if folder_size < max_size_bytes:
+                        small_folder = SmallFolder(
+                            path=item,
+                            size=folder_size,
+                            file_count=file_count
+                        )
+                        small_folders.append(small_folder)
+                        
+                except (OSError, PermissionError):
+                    continue
+    
+    except PermissionError:
+        pass
+    
+    return small_folders
+
+
+def analyze_tv_moves(directories: List[str], find_small_folders_flag: bool = False, max_size_mb: int = 100) -> TVMoveAnalysis:
+    """
+    Analyze TV directories to determine what episodes need to be moved.
+    
+    Args:
+        directories: List of TV directory paths to analyze
+        find_small_folders_flag: Whether to find small folders for deletion
+        max_size_mb: Maximum folder size in MB for small folder detection
+        
+    Returns:
+        TVMoveAnalysis with planned moves and small folders
+    """
+    all_moves = []
+    all_existing_folders = {}
+    new_folders_needed = set()
+    all_small_folders = []
+    total_episodes = 0
+    total_size = 0
+    
+    for directory in directories:
+        if not Path(directory).exists():
+            continue
+            
+        # Find existing show folders
+        existing_folders = find_existing_show_folders(directory)
+        all_existing_folders.update(existing_folders)
+        
+        # Find small folders if requested
+        if find_small_folders_flag:
+            small_folders = find_small_folders(directory, max_size_mb)
+            all_small_folders.extend(small_folders)
+        
+        # Find loose episodes
+        loose_episodes = find_loose_episodes(directory)
+        
+        for episode_path, show_name, season, episode in loose_episodes:
+            normalized_show = normalize_show_name(show_name)
+            
+            try:
+                file_size = episode_path.stat().st_size
+            except OSError:
+                file_size = 0
+            
+            total_episodes += 1
+            total_size += file_size
+            
+            # Determine target path
+            if normalized_show in existing_folders:
+                # Move to existing show folder
+                target_folder = existing_folders[normalized_show]
+                target_path = target_folder / episode_path.name
+                action = 'move_to_existing'
+            else:
+                # Need to create new show folder
+                show_folder_name = show_name  # Use original extracted name
+                target_folder = Path(directory) / show_folder_name
+                target_path = target_folder / episode_path.name
+                action = 'create_folder_and_move'
+                new_folders_needed.add(show_folder_name)
+            
+            move = EpisodeMove(
+                source_path=episode_path,
+                target_path=target_path,
+                show_name=show_name,
+                season=season,
+                episode=episode,
+                size=file_size,
+                action=action
+            )
+            all_moves.append(move)
+    
+    return TVMoveAnalysis(
+        moves=all_moves,
+        existing_show_folders=all_existing_folders,
+        new_folders_needed=sorted(list(new_folders_needed)),
+        small_folders=all_small_folders,
+        total_episodes=total_episodes,
+        total_size=total_size
+    )
+
+
+def print_move_analysis(analysis: TVMoveAnalysis, dry_run: bool = True) -> None:
+    """
+    Print detailed analysis of planned TV episode moves.
+    
+    Args:
+        analysis: TVMoveAnalysis object with move plans
+        dry_run: Whether this is a dry run (affects messaging)
+    """
+    mode_text = "DRY RUN - PREVIEW MODE" if dry_run else "EXECUTION MODE"
+    action_text = "would be" if dry_run else "will be"
+    
+    print(f"TV EPISODE ORGANIZATION ANALYSIS")
+    print("=" * 60)
+    print(f"Mode: {mode_text}")
+    print(f"Episodes found: {analysis.total_episodes}")
+    print(f"Total size: {format_file_size(analysis.total_size)}")
+    print(f"New folders needed: {len(analysis.new_folders_needed)}")
+    print(f"Existing show folders: {len(analysis.existing_show_folders)}")
+    print(f"Small folders found: {len(analysis.small_folders)}")
+    
+    if not analysis.moves and not analysis.small_folders:
+        print("\nNo loose episodes or small folders found - all episodes are properly organized!")
+        return
+    
+    # Group moves by show
+    moves_by_show = defaultdict(list)
+    for move in analysis.moves:
+        moves_by_show[move.show_name].append(move)
+    
+    print(f"\nPLANNED ACTIONS:")
+    print("=" * 60)
+    
+    for show_name, moves in sorted(moves_by_show.items()):
+        show_size = sum(move.size for move in moves)
+        print(f"\n{show_name}")
+        print(f"   Episodes: {len(moves)}")
+        print(f"   Total size: {format_file_size(show_size)}")
+        
+        # Check if folder needs to be created
+        create_folder = any(move.action == 'create_folder_and_move' for move in moves)
+        if create_folder:
+            folder_path = moves[0].target_path.parent
+            print(f"   Action: CREATE new folder '{folder_path.name}'")
+            print(f"      Path: {folder_path}")
+        else:
+            existing_folder = moves[0].target_path.parent
+            print(f"   Action: MOVE to existing folder '{existing_folder.name}'")
+            print(f"      Path: {existing_folder}")
+        
+        print(f"   Episodes that {action_text} moved:")
+        
+        # Sort episodes by season/episode
+        sorted_moves = sorted(moves, key=lambda x: (x.season, x.episode))
+        for move in sorted_moves[:10]:  # Show first 10
+            print(f"      S{move.season:02d}E{move.episode:02d} - {move.source_path.name}")
+            print(f"        FROM: {move.source_path.parent}")
+            print(f"        TO:   {move.target_path.parent}")
+            print(f"        Size: {format_file_size(move.size)}")
+        
+        if len(moves) > 10:
+            print(f"      ... and {len(moves) - 10} more episodes")
+    
+    # Summary of new folders
+    if analysis.new_folders_needed:
+        print(f"\nNEW FOLDERS THAT {action_text.upper()} CREATED:")
+        print("-" * 40)
+        for folder_name in analysis.new_folders_needed:
+            print(f"   {folder_name}")
+    
+    # Summary by action type
+    moves_to_existing = [m for m in analysis.moves if m.action == 'move_to_existing']
+    moves_to_new = [m for m in analysis.moves if m.action == 'create_folder_and_move']
+    
+    print(f"\nSUMMARY:")
+    print(f"   Episodes moving to existing folders: {len(moves_to_existing)}")
+    print(f"   Episodes moving to new folders: {len(moves_to_new)}")
+    print(f"   Total episodes to organize: {len(analysis.moves)}")
+    print(f"   Total data to move: {format_file_size(analysis.total_size)}")
+    
+    # Show small folders section
+    if analysis.small_folders:
+        print(f"\nSMALL FOLDERS THAT {action_text.upper()} DELETED:")
+        print("=" * 60)
+        
+        # Sort by size (smallest first)
+        sorted_small_folders = sorted(analysis.small_folders, key=lambda x: x.size)
+        
+        for i, folder in enumerate(sorted_small_folders, 1):
+            print(f"{i:2d}. {folder.path.name}")
+            print(f"    Size: {format_file_size(folder.size)}")
+            print(f"    Files: {folder.file_count}")
+            print(f"    Path: {folder.path}")
+            print()
+        
+        small_folders_size = sum(folder.size for folder in analysis.small_folders)
+        print(f"Total size to be freed: {format_file_size(small_folders_size)}")
+    
+    if dry_run:
+        print(f"\nTHIS IS A DRY RUN - NO FILES WILL BE MOVED OR DELETED")
+        print(f"   Use --execute to actually perform the moves and deletions")
+        if analysis.moves:
+            print(f"   NOTE: After moves, empty/small folders (<100MB) will be automatically cleaned up")
+    else:
+        print(f"\nFILES WILL BE MOVED AND FOLDERS DELETED - MAKE SURE YOU HAVE BACKUPS!")
+        if analysis.moves:
+            print(f"   NOTE: Empty/small folders (<100MB) will be automatically cleaned up after moves")
+
+
+def delete_small_folders(small_folders: List[SmallFolder]) -> Tuple[int, int]:
+    """
+    Delete small folders.
+    
+    Args:
+        small_folders: List of SmallFolder objects to delete
+        
+    Returns:
+        Tuple of (success_count, error_count)
+    """
+    success_count = 0
+    error_count = 0
+    
+    if not small_folders:
+        return success_count, error_count
+    
+    print(f"\nDELETING SMALL FOLDERS...")
+    print("=" * 50)
+    
+    for i, folder in enumerate(small_folders, 1):
+        print(f"\n[{i}/{len(small_folders)}] Deleting: {folder.path.name}")
+        print(f"  Path: {folder.path}")
+        print(f"  Size: {format_file_size(folder.size)} ({folder.file_count} files)")
+        
+        try:
+            # Use shutil.rmtree to recursively delete the folder
+            shutil.rmtree(str(folder.path))
+            print(f"  Successfully deleted")
+            success_count += 1
+            
+        except Exception as e:
+            print(f"  Failed to delete: {e}")
+            error_count += 1
+    
+    return success_count, error_count
+
+
+def find_empty_or_small_folders_after_moves(moves: List[EpisodeMove], directories: List[str], max_size_mb: int = 100) -> List[SmallFolder]:
+    """
+    Find folders that became empty or small after moving episodes.
+    
+    Args:
+        moves: List of moves that were performed
+        directories: List of directories to check
+        max_size_mb: Maximum folder size in MB to consider for deletion
+        
+    Returns:
+        List of SmallFolder objects that should be deleted
+    """
+    folders_to_check = set()
+    max_size_bytes = max_size_mb * 1024 * 1024
+    
+    # Collect all source directories that had files moved from them
+    for move in moves:
+        source_parent = move.source_path.parent
+        folders_to_check.add(source_parent)
+        
+        # Also check parent directories in case they became empty
+        current = source_parent
+        for directory in directories:
+            directory_path = Path(directory)
+            try:
+                # Check if source_parent is within this TV directory
+                if current.is_relative_to(directory_path) and current != directory_path:
+                    while current.parent != directory_path and current != current.parent:
+                        folders_to_check.add(current.parent)
+                        current = current.parent
+                break
+            except (ValueError, OSError):
+                continue
+    
+    small_folders = []
+    
+    for folder_path in folders_to_check:
+        if not folder_path.exists():
+            continue
+            
+        try:
+            # Calculate current folder size
+            folder_size = 0
+            file_count = 0
+            
+            for file_path in folder_path.rglob('*'):
+                if file_path.is_file():
+                    try:
+                        folder_size += file_path.stat().st_size
+                        file_count += 1
+                    except (OSError, PermissionError):
+                        continue
+            
+            # Consider folder for deletion if it's empty or smaller than threshold
+            if folder_size < max_size_bytes:
+                small_folder = SmallFolder(
+                    path=folder_path,
+                    size=folder_size,
+                    file_count=file_count
+                )
+                small_folders.append(small_folder)
+                
+        except (OSError, PermissionError):
+            continue
+    
+    return small_folders
+
+
+def execute_moves(analysis: TVMoveAnalysis, delete_small: bool = False, directories: List[str] = None) -> bool:
+    """
+    Execute the planned TV episode moves and automatically clean up empty/small folders.
+    
+    Args:
+        analysis: TVMoveAnalysis with moves to execute
+        delete_small: Whether to delete pre-existing small folders
+        directories: List of TV directories (for cleanup after moves)
+        
+    Returns:
+        True if all operations completed successfully, False otherwise
+    """
+    print(f"\nEXECUTING TV EPISODE MOVES...")
+    print("=" * 50)
+    
+    success_count = 0
+    error_count = 0
+    
+    # Create new folders first
+    for folder_name in analysis.new_folders_needed:
+        # Find the directory where this folder should be created
+        folder_moves = [m for m in analysis.moves if m.target_path.parent.name == folder_name]
+        if folder_moves:
+            target_folder = folder_moves[0].target_path.parent
+            try:
+                target_folder.mkdir(parents=True, exist_ok=True)
+                print(f"Created folder: {target_folder}")
+            except Exception as e:
+                print(f"Failed to create folder {target_folder}: {e}")
+                error_count += 1
+                continue
+    
+    # Execute moves
+    for i, move in enumerate(analysis.moves, 1):
+        print(f"\n[{i}/{len(analysis.moves)}] Moving: {move.source_path.name}")
+        print(f"  FROM: {move.source_path.parent}")
+        print(f"  TO:   {move.target_path.parent}")
+        
+        try:
+            # Ensure target directory exists
+            move.target_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Check if target file already exists
+            if move.target_path.exists():
+                print(f"  Target file already exists: {move.target_path}")
+                # Create unique name by adding number
+                base_name = move.target_path.stem
+                extension = move.target_path.suffix
+                counter = 1
+                while move.target_path.exists():
+                    new_name = f"{base_name}_{counter}{extension}"
+                    move = move._replace(target_path=move.target_path.parent / new_name)
+                    counter += 1
+                print(f"  Using new name: {move.target_path.name}")
+            
+            # Perform the move
+            shutil.move(str(move.source_path), str(move.target_path))
+            print(f"  Successfully moved")
+            success_count += 1
+            
+        except Exception as e:
+            print(f"  Failed to move: {e}")
+            error_count += 1
+    
+    print(f"\nMOVE RESULTS:")
+    print(f"  Successful moves: {success_count}")
+    print(f"  Failed moves: {error_count}")
+    print(f"  Total processed: {len(analysis.moves)}")
+    
+    # Delete pre-existing small folders if requested
+    delete_success = 0
+    delete_errors = 0
+    if delete_small and analysis.small_folders:
+        delete_success, delete_errors = delete_small_folders(analysis.small_folders)
+        print(f"\nPRE-EXISTING SMALL FOLDER DELETION RESULTS:")
+        print(f"  Successful deletions: {delete_success}")
+        print(f"  Failed deletions: {delete_errors}")
+        print(f"  Total processed: {len(analysis.small_folders)}")
+    
+    # Automatically clean up folders that became empty/small after moves
+    cleanup_success = 0
+    cleanup_errors = 0
+    if analysis.moves and directories:
+        print(f"\nCLEANING UP EMPTY/SMALL FOLDERS AFTER MOVES...")
+        print("=" * 50)
+        
+        # Find folders that became empty or small after the moves
+        folders_to_cleanup = find_empty_or_small_folders_after_moves(analysis.moves, directories)
+        
+        if folders_to_cleanup:
+            print(f"Found {len(folders_to_cleanup)} folders to clean up:")
+            for folder in folders_to_cleanup:
+                if folder.size == 0:
+                    print(f"  - {folder.path.name} (EMPTY)")
+                else:
+                    print(f"  - {folder.path.name} ({format_file_size(folder.size)}, {folder.file_count} files)")
+            
+            cleanup_success, cleanup_errors = delete_small_folders(folders_to_cleanup)
+            print(f"\nCLEANUP RESULTS:")
+            print(f"  Successful cleanups: {cleanup_success}")
+            print(f"  Failed cleanups: {cleanup_errors}")
+            print(f"  Total processed: {len(folders_to_cleanup)}")
+        else:
+            print("No folders need cleanup - source directories still contain content.")
+    
+    return error_count == 0 and delete_errors == 0 and cleanup_errors == 0
+
+
+def main() -> None:
+    """Main entry point for TV episode mover."""
+    parser = argparse.ArgumentParser(
+        description="Organize TV episodes by moving them into proper show folders",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=f"""
+Static TV Directories Configured:
+{chr(10).join(f"  - {path}" for path in TV_DIRECTORIES)}
+
+Examples:
+  # Dry run with default directories (preview mode)
+  python -m file_managers.plex.utils.tv_mover
+  
+  # Dry run with custom directories
+  python -m file_managers.plex.utils.tv_mover --custom "C:/TV,D:/Shows"
+  
+  # Dry run and find small folders for deletion
+  python -m file_managers.plex.utils.tv_mover --delete-small
+  
+  # Dry run with custom size threshold (50MB instead of 100MB)
+  python -m file_managers.plex.utils.tv_mover --delete-small --max-size 50
+  
+  # Actually execute the moves (DANGEROUS!)
+  python -m file_managers.plex.utils.tv_mover --execute
+  
+  # Execute moves and delete small folders (VERY DANGEROUS!)
+  python -m file_managers.plex.utils.tv_mover --execute --delete-small
+        """
+    )
+    
+    parser.add_argument(
+        "--custom",
+        help="Comma-separated list of custom TV directories to analyze instead of static paths"
+    )
+    
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Actually execute the moves (DEFAULT: dry run mode)"
+    )
+    
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose output"
+    )
+    
+    parser.add_argument(
+        "--delete-small",
+        action="store_true",
+        help="Delete folders smaller than specified size (default: 100MB)"
+    )
+    
+    parser.add_argument(
+        "--max-size",
+        type=int,
+        default=100,
+        help="Maximum folder size in MB for deletion (default: 100)"
+    )
+    
+    args = parser.parse_args()
+    
+    # Determine directories to use
+    if args.custom:
+        directories = [d.strip() for d in args.custom.split(',') if d.strip()]
+        use_static = False
+    else:
+        directories = TV_DIRECTORIES
+        use_static = True
+    
+    try:
+        # Analyze what needs to be moved
+        if args.verbose:
+            directory_type = "predefined" if use_static else "custom"
+            print(f"Analyzing {directory_type} TV directories...")
+            for i, directory in enumerate(directories, 1):
+                print(f"  {i}. {directory}")
+            print()
+        
+        analysis = analyze_tv_moves(directories, find_small_folders_flag=args.delete_small, max_size_mb=args.max_size)
+        
+        # Show analysis results
+        print_move_analysis(analysis, dry_run=not args.execute)
+        
+        # Execute moves if requested
+        if args.execute:
+            if analysis.moves or (args.delete_small and analysis.small_folders):
+                print(f"\n" + "WARNING: " * 10)
+                if analysis.moves:
+                    print("You are about to MOVE TV episode files!")
+                if args.delete_small and analysis.small_folders:
+                    print(f"You are about to DELETE {len(analysis.small_folders)} small folders!")
+                print("This will change your file structure!")
+                print("Make sure you have backups before proceeding!")
+                print("WARNING: " * 10)
+                
+                action_items = []
+                if analysis.moves:
+                    action_items.append(f"moving {len(analysis.moves)} episodes")
+                if args.delete_small and analysis.small_folders:
+                    action_items.append(f"deleting {len(analysis.small_folders)} small folders")
+                
+                action_text = " and ".join(action_items)
+                confirm = input(f"\nType 'EXECUTE' to proceed with {action_text}: ").strip()
+                if confirm == "EXECUTE":
+                    success = execute_moves(analysis, delete_small=args.delete_small, directories=directories)
+                    if success:
+                        print(f"\nAll operations completed successfully!")
+                    else:
+                        print(f"\nSome operations failed - check the output above")
+                else:
+                    print(f"\nOperation cancelled")
+            else:
+                print(f"\nNo operations needed - all episodes are already organized!")
+                if args.delete_small:
+                    print(f"No small folders found to delete.")
+        
+    except KeyboardInterrupt:
+        print(f"\nOperation cancelled by user")
+    except Exception as e:
+        print(f"Error during analysis: {e}")
+
+
+if __name__ == "__main__":
+    main()
