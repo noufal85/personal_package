@@ -80,6 +80,10 @@ file_managers/
 │   └── file_manager.py  # File management CLI tool
 └── plex/                # Plex-specific functionality
     ├── __init__.py
+    ├── config/          # Configuration management
+    │   ├── __init__.py
+    │   ├── config.py          # Python configuration interface
+    │   └── media_config.yaml  # YAML configuration file
     ├── utils/           # Plex utility modules
     │   ├── __init__.py
     │   ├── movie_scanner.py       # Movie duplicate detection
@@ -94,22 +98,34 @@ file_managers/
         └── movie_duplicates.py    # Movie duplicate scanner CLI
 ```
 
-### Static Configuration
+### Configuration System
 
-**Movie Directories:**
+**Centralized Configuration:**
+- All settings managed in `file_managers/plex/config/media_config.yaml`
+- Python config interface at `file_managers/plex/config/config.py`
+- Singleton pattern ensures consistent configuration across all modules
+
+**Movie Directories (from config):**
 - `/mnt/qnap/plex/Movie/` - Primary movie directory (\\192.168.1.27\plex\Movie)
 - `/mnt/qnap/Media/Movies/` - Secondary movie directory (\\192.168.1.27\Media\Movies)
 - `/mnt/qnap/Multimedia/Movies/` - Tertiary movie directory (\\192.168.1.27\Multimedia\Movies)
 
-**TV Directories:**
+**TV Directories (from config):**
 - `/mnt/qnap/plex/TV/` - Primary TV directory (\\192.168.1.27\plex\TV)
 - `/mnt/qnap/Media/TV/` - Secondary TV directory (\\192.168.1.27\Media\TV)
 - `/mnt/qnap/Multimedia/TV/` - Tertiary TV directory (\\192.168.1.27\Multimedia\TV)
 
+**Configurable Settings:**
+- Video file extensions
+- Small folder threshold (100MB default)
+- Report formats and timestamp patterns
+- Safety settings and confirmation phrases
+- NAS server configuration
+
 **Reports:**
-- All reports are saved to `reports/` directory in the project root
+- Directory path configurable in YAML (default: `reports/`)
 - Available in both human-readable (.txt) and machine-readable (.json) formats
-- Timestamped filenames for easy tracking
+- Timestamped filenames with configurable format
 
 **Interactive Scripts:**
 - `run_movie_scanner.py` - Easy movie duplicate scanner launcher

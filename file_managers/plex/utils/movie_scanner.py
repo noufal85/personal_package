@@ -6,14 +6,10 @@ from pathlib import Path
 from typing import Dict, List, NamedTuple, Set, Tuple
 from collections import defaultdict
 
-# Static list of movie directory paths  
-# QNAP Server: 192.168.1.27 mounted at /mnt/qnap/
-# TODO: Move to external config file for easier management
-MOVIE_DIRECTORIES = [
-    "/mnt/qnap/plex/Movie/",         # \\192.168.1.27\plex\Movie
-    "/mnt/qnap/Media/Movies/",       # \\192.168.1.27\Media\Movies  
-    "/mnt/qnap/Multimedia/Movies/",  # \\192.168.1.27\Multimedia\Movies
-]
+from ..config.config import config
+
+# Get movie directories from config
+MOVIE_DIRECTORIES = config.movie_directories
 
 
 class MovieFile(NamedTuple):
@@ -83,7 +79,7 @@ def scan_directory_for_movies(directory_path: str) -> List[MovieFile]:
     
     Returns list of MovieFile objects for all video files found.
     """
-    movie_extensions = {'.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.m4v', '.mpg', '.mpeg'}
+    movie_extensions = config.video_extensions_set
     movies = []
     
     directory = Path(directory_path)

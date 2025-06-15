@@ -5,21 +5,18 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
-# Static TV directories - modify these to match your setup
-# TODO: Move to external config file for easier management
-TV_DIRECTORIES = [
-    "/mnt/qnap/Multimedia/TV/",     # \\192.168.1.27\Multimedia\TV
-    "/mnt/qnap/Media/TV/",          # \\192.168.1.27\Media\TV
-    "/mnt/qnap/plex/TV/"            # \\192.168.1.27\plex\TV
-]
+from ..config.config import config
+
+# Get TV directories from config
+TV_DIRECTORIES = config.tv_directories
 
 # Future media type directories (placeholders for expansion)
 # MUSIC_DIRECTORIES = []
 # DOCUMENTARY_DIRECTORIES = []  
 # STANDUP_DIRECTORIES = []
 
-# Common video file extensions
-VIDEO_EXTENSIONS = {'.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.mpg', '.mpeg'}
+# Get video extensions from config
+VIDEO_EXTENSIONS = config.video_extensions_set
 
 # TV show name patterns - common naming conventions
 TV_SHOW_PATTERNS = [

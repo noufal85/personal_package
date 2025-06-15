@@ -8,12 +8,15 @@ from typing import List, Dict, NamedTuple, Optional, Tuple
 from collections import defaultdict
 
 from .tv_scanner import (
-    TV_DIRECTORIES,
     extract_tv_info_from_filename,
     is_video_file,
     format_file_size,
     normalize_show_name
 )
+from ..config.config import config
+
+# Get TV directories from config
+TV_DIRECTORIES = config.tv_directories
 
 
 class EpisodeMove(NamedTuple):
@@ -128,19 +131,22 @@ def find_loose_episodes(directory: str) -> List[Tuple[Path, str, int, int]]:
     return loose_episodes
 
 
-def find_small_folders(directory: str, max_size_mb: int = 100) -> List[SmallFolder]:
+def find_small_folders(directory: str, max_size_mb: int = None) -> List[SmallFolder]:
     """
     Find folders smaller than the specified size.
     
     Args:
         directory: Path to TV directory to scan
-        max_size_mb: Maximum folder size in MB (default: 100MB)
+        max_size_mb: Maximum folder size in MB (default: from config)
         
     Returns:
         List of SmallFolder objects
     """
     small_folders = []
     directory_path = Path(directory)
+    
+    if max_size_mb is None:
+        max_size_mb = config.small_folder_threshold_mb
     max_size_bytes = max_size_mb * 1024 * 1024  # Convert MB to bytes
     
     if not directory_path.exists():
@@ -180,18 +186,20 @@ def find_small_folders(directory: str, max_size_mb: int = 100) -> List[SmallFold
     return small_folders
 
 
-def analyze_tv_moves(directories: List[str], find_small_folders_flag: bool = False, max_size_mb: int = 100) -> TVMoveAnalysis:
+def analyze_tv_moves(directories: List[str], find_small_folders_flag: bool = False, max_size_mb: int = None) -> TVMoveAnalysis:
     """
     Analyze TV directories to determine what episodes need to be moved.
     
     Args:
         directories: List of TV directory paths to analyze
         find_small_folders_flag: Whether to find small folders for deletion
-        max_size_mb: Maximum folder size in MB for small folder detection
+        max_size_mb: Maximum folder size in MB for small folder detection (default: from config)
         
     Returns:
         TVMoveAnalysis with planned moves and small folders
     """
+    if max_size_mb is None:
+        max_size_mb = config.small_folder_threshold_mb
     all_moves = []
     all_existing_folders = {}
     new_folders_needed = set()
@@ -406,19 +414,22 @@ def delete_small_folders(small_folders: List[SmallFolder]) -> Tuple[int, int]:
     return success_count, error_count
 
 
-def find_empty_or_small_folders_after_moves(moves: List[EpisodeMove], directories: List[str], max_size_mb: int = 100) -> List[SmallFolder]:
+def find_empty_or_small_folders_after_moves(moves: List[EpisodeMove], directories: List[str], max_size_mb: int = None) -> List[SmallFolder]:
     """
     Find folders that became empty or small after moving episodes.
     
     Args:
         moves: List of moves that were performed
         directories: List of directories to check
-        max_size_mb: Maximum folder size in MB to consider for deletion
+        max_size_mb: Maximum folder size in MB to consider for deletion (default: from config)
         
     Returns:
         List of SmallFolder objects that should be deleted
     """
     folders_to_check = set()
+    
+    if max_size_mb is None:
+        max_size_mb = config.small_folder_threshold_mb
     max_size_bytes = max_size_mb * 1024 * 1024
     
     # Collect all source directories that had files moved from them
@@ -589,7 +600,7 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 Static TV Directories Configured:
-{chr(10).join(f"  - {path}" for path in TV_DIRECTORIES)}
+{chr(10).join(f"  - {path}" for path in config.tv_directories)}
 
 Examples:
   # Dry run with default directories (preview mode)
@@ -632,14 +643,14 @@ Examples:
     parser.add_argument(
         "--delete-small",
         action="store_true",
-        help="Delete folders smaller than specified size (default: 100MB)"
+        help=f"Delete folders smaller than specified size (default: {config.small_folder_threshold_mb}MB)"
     )
     
     parser.add_argument(
         "--max-size",
         type=int,
-        default=100,
-        help="Maximum folder size in MB for deletion (default: 100)"
+        default=None,
+        help=f"Maximum folder size in MB for deletion (default: {config.small_folder_threshold_mb})"
     )
     
     args = parser.parse_args()

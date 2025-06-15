@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(python3 -m file_managers.cli.movie_duplicates:*)",
+      "Bash(ping:*)",
+      "Bash(sudo mkdir:*)",
+      "Bash(grep:*)",
+      "Bash(cp:*)",
+      "Bash(rm:*)",
+      "Bash(python3:*)",
+      "Bash(python -m file_managers.plex.cli.movie_duplicates:*)",
+      "Bash(mount)",
+      "Bash(touch:*)",
+      "Bash(cat:*)",
+      "Bash(mcp-server-github:*)"
+    ],
+    "deny": []
+  }
+}

@@ -7,25 +7,24 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from .tv_scanner import (
-    TV_DIRECTORIES,
     TVShowGroup,
     TVEpisode,
     format_file_size,
     scan_directory_for_tv_episodes,
 )
+from ..config.config import config
 
 
 def get_reports_directory() -> Path:
     """Get the reports directory path."""
-    current_dir = Path.cwd()
-    reports_dir = current_dir / "reports"
+    reports_dir = config.get_reports_path()
     reports_dir.mkdir(exist_ok=True)
     return reports_dir
 
 
 def get_timestamp() -> str:
     """Get current timestamp for report naming."""
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
+    return datetime.now().strftime(config.timestamp_format)
 
 
 def analyze_existing_tv_folders(directories: List[str]) -> Dict[str, Dict]:
@@ -444,7 +443,7 @@ def main() -> None:
     try:
         # Generate folder analysis report
         print("📊 Generating TV folder analysis report...")
-        folder_report = generate_tv_folder_analysis_report(TV_DIRECTORIES)
+        folder_report = generate_tv_folder_analysis_report(config.tv_directories)
         print(f"✅ TV folder analysis report: {folder_report}")
         
         # Find unorganized episodes
@@ -458,7 +457,7 @@ def main() -> None:
         
         # Generate JSON reports
         print("📄 Generating JSON reports...")
-        folder_json, plan_json = generate_tv_json_reports(TV_DIRECTORIES, tv_groups)
+        folder_json, plan_json = generate_tv_json_reports(config.tv_directories, tv_groups)
         print(f"✅ JSON folder analysis: {folder_json}")
         print(f"✅ JSON organization plan: {plan_json}")
         

@@ -7,20 +7,19 @@ from pathlib import Path
 from typing import Dict, List, Any, Tuple
 
 from .movie_scanner import DuplicateGroup, MovieFile, format_file_size, scan_directory_for_movies
+from ..config.config import config
 
 
 def get_reports_directory() -> Path:
     """Get the reports directory, creating it if it doesn't exist."""
-    # Get the project root directory (go up 4 levels from this file)
-    project_root = Path(__file__).parent.parent.parent.parent
-    reports_dir = project_root / "reports"
+    reports_dir = config.get_reports_path()
     reports_dir.mkdir(exist_ok=True)
     return reports_dir
 
 
 def generate_timestamp() -> str:
     """Generate timestamp string for report filenames."""
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
+    return datetime.now().strftime(config.timestamp_format)
 
 
 def generate_duplicate_report(duplicates: List[DuplicateGroup]) -> Tuple[str, str]:
@@ -339,7 +338,7 @@ def print_report_summary(report_paths: Dict[str, str]) -> None:
 
 def main() -> None:
     """Main entry point - generates both inventory and duplicate reports using default directories."""
-    from .movie_scanner import find_duplicate_movies_in_static_paths, MOVIE_DIRECTORIES
+    from .movie_scanner import find_duplicate_movies_in_static_paths
     
     print("📄 MOVIE REPORT GENERATOR")
     print("=" * 50)
@@ -350,7 +349,7 @@ def main() -> None:
         duplicates = find_duplicate_movies_in_static_paths()
         
         # Generate both reports
-        report_paths = generate_combined_movie_reports(MOVIE_DIRECTORIES, duplicates)
+        report_paths = generate_combined_movie_reports(config.movie_directories, duplicates)
         
         # Show results
         if duplicates:

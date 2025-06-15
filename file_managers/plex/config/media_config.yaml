@@ -1,0 +1,134 @@
+# Media Library Configuration
+# Configuration for Plex media directories and settings
+
+# QNAP NAS Server Configuration
+nas:
+  server_ip: "192.168.1.27"
+  mount_point: "/mnt/qnap"
+  shares:
+    - name: "plex"
+      windows_path: "\\\\192.168.1.27\\plex"
+      mount_path: "/mnt/qnap/plex"
+    - name: "Media"
+      windows_path: "\\\\192.168.1.27\\Media" 
+      mount_path: "/mnt/qnap/Media"
+    - name: "Multimedia"
+      windows_path: "\\\\192.168.1.27\\Multimedia"
+      mount_path: "/mnt/qnap/Multimedia"
+
+# Movie Directory Configuration
+movies:
+  directories:
+    - path: "/mnt/qnap/plex/Movie/"
+      description: "Primary movie directory"
+      windows_path: "\\\\192.168.1.27\\plex\\Movie"
+      priority: 1
+    - path: "/mnt/qnap/Media/Movies/"
+      description: "Secondary movie directory" 
+      windows_path: "\\\\192.168.1.27\\Media\\Movies"
+      priority: 2
+    - path: "/mnt/qnap/Multimedia/Movies/"
+      description: "Tertiary movie directory"
+      windows_path: "\\\\192.168.1.27\\Multimedia\\Movies"
+      priority: 3
+
+# TV Show Directory Configuration  
+tv:
+  directories:
+    - path: "/mnt/qnap/plex/TV/"
+      description: "Primary TV directory"
+      windows_path: "\\\\192.168.1.27\\plex\\TV"
+      priority: 1
+    - path: "/mnt/qnap/Media/TV/"
+      description: "Secondary TV directory"
+      windows_path: "\\\\192.168.1.27\\Media\\TV" 
+      priority: 2
+    - path: "/mnt/qnap/Multimedia/TV/"
+      description: "Tertiary TV directory"
+      windows_path: "\\\\192.168.1.27\\Multimedia\\TV"
+      priority: 3
+
+# Documentary Directory Configuration
+documentaries:
+  directories:
+    - path: "/mnt/qnap/Media/Documentary/"
+      description: "Primary documentary directory"
+      windows_path: "\\\\192.168.1.27\\Media\\Documentary"
+      priority: 1
+
+# Stand-up Comedy Directory Configuration
+standups:
+  directories:
+    - path: "/mnt/qnap/Media/standups/"
+      description: "Primary stand-up comedy directory"
+      windows_path: "\\\\192.168.1.27\\Media\\standups"
+      priority: 1
+
+# Download Directory Configuration
+downloads:
+  directory: "/mnt/d/Completed/"
+  description: "Download staging directory"
+  windows_path: "D:\\Completed\\"
+
+# File Processing Settings
+settings:
+  # File extensions to consider as video files
+  video_extensions:
+    - ".mp4"
+    - ".mkv" 
+    - ".avi"
+    - ".mov"
+    - ".wmv"
+    - ".flv"
+    - ".m4v"
+    - ".mpg"
+    - ".mpeg"
+    - ".webm"
+    - ".ts"
+  
+  # Small folder threshold in MB for cleanup
+  small_folder_threshold_mb: 100
+  
+  # Report settings
+  reports:
+    directory: "reports"
+    formats: ["txt", "json"]
+    timestamp_format: "%Y%m%d_%H%M%S"
+
+# AWS Bedrock Configuration for AI Classification
+bedrock:
+  region: "us-east-1"
+  model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+  max_tokens: 1000
+  temperature: 0.1
+  
+  # Classification prompt template
+  classification_prompt: |
+    Analyze the following filename and classify it as one of these media types:
+    - MOVIE: Feature films, movies
+    - TV: TV series episodes, shows  
+    - DOCUMENTARY: Documentary films or series
+    - STANDUP: Stand-up comedy specials
+    - AUDIOBOOK: Audio books
+    - OTHER: Anything else
+    
+    Filename: {filename}
+    
+    Consider the filename structure, keywords, and naming patterns.
+    Respond with only the classification (MOVIE, TV, DOCUMENTARY, STANDUP, AUDIOBOOK, or OTHER).
+
+# Backup and Safety Settings
+safety:
+  # Always backup before deletion
+  create_backups: true
+  backup_directory: "backups"
+  
+  # Confirmation requirements
+  require_confirmation: true
+  confirmation_phrases:
+    delete: "DELETE FILES"
+    move: "MOVE FILES" 
+    execute: "EXECUTE"
+  
+  # Dry run settings
+  default_dry_run: true

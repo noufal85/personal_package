@@ -16,6 +16,13 @@ A comprehensive Python package for managing Plex media libraries, providing tool
 - **Smart Cleanup** - Automatically remove empty and small folders after organization
 - **Safety First** - Dry run mode shows what would be changed before making any moves
 
+### 🤖 AI-Powered Auto-Organizer
+- **Intelligent Classification** - Uses AWS Bedrock Claude 3.5 Sonnet to identify media types
+- **Multi-Format Support** - Handles movies, TV shows, documentaries, stand-up comedy, and audiobooks
+- **Smart Directory Selection** - Automatically chooses appropriate Plex directories with space checking
+- **Robust Fallback** - Falls back to rule-based classification when AI is unavailable
+- **Multi-Directory Support** - Tries alternative directories when primary locations are full
+
 ### 📊 Reporting
 - **Multiple Formats** - Reports available in both human-readable (.txt) and machine-readable (.json) formats
 - **Timestamped** - All reports are timestamped for easy tracking
@@ -59,25 +66,219 @@ python -m file_managers.plex.utils.tv_mover --execute
 python -m file_managers.plex.utils.tv_report_generator
 ```
 
-## 📁 Pre-configured Directories
+### Auto-Organizer (AI-Powered)
 
-The package comes pre-configured for QNAP NAS servers with the following directories:
+```bash
+# Preview AI-powered organization (safe dry run) 
+python -m file_managers.plex.utils.auto_organizer --verbose
 
-### Movie Directories
+# Actually organize files with AI classification
+python -m file_managers.plex.utils.auto_organizer --execute
+
+# Note: Generates detailed reports showing exactly where each file was moved
+# Reports saved to: reports/auto_organizer_YYYYMMDD_HHMMSS.txt
+```
+
+## ⚙️ Configuration
+
+### Centralized Configuration
+All media paths and settings are centralized in `file_managers/plex/config/media_config.yaml`. This makes it easy to:
+- Update directory paths in one place
+- Modify file size thresholds  
+- Change video file extensions
+- Adjust safety settings
+
+### Pre-configured Directories
+The package comes pre-configured for QNAP NAS servers:
+
+**Movie Directories:**
 - `/mnt/qnap/plex/Movie/`
 - `/mnt/qnap/Media/Movies/`
 - `/mnt/qnap/Multimedia/Movies/`
 
-### TV Directories
+**TV Directories:**
 - `/mnt/qnap/plex/TV/`
 - `/mnt/qnap/Media/TV/`
 - `/mnt/qnap/Multimedia/TV/`
 
-### Custom Directories
-All tools support custom directories via the `--custom` flag:
+### Customization
+1. **Edit Configuration File:** Modify `file_managers/plex/config/media_config.yaml`
+2. **Command Line Override:** Use `--custom` flag for one-time custom directories:
 ```bash
 python -m file_managers.plex.utils.tv_mover --custom "/my/tv/path1,/my/tv/path2"
 ```
+
+### Key Settings
+- **Small Folder Threshold:** 100MB (configurable)
+- **Video Extensions:** .mp4, .mkv, .avi, .mov, .wmv, etc.
+- **Report Formats:** Text (.txt) and JSON (.json)
+- **Safety Features:** Dry run mode, confirmations, backups
+- **AI Classification:** Optional AWS Bedrock integration for intelligent media type detection
+
+### AWS Bedrock Configuration (Optional)
+For AI-powered media classification, create a `.env` file in the project root:
+
+```bash
+# .env file
+AWS_ACCESS_KEY_ID=your_access_key_here
+AWS_SECRET_ACCESS_KEY=your_secret_key_here
+AWS_DEFAULT_REGION=us-east-1
+```
+
+**Note:** AI classification is optional. The system works perfectly with rule-based classification as a fallback.
+
+## 🔄 How Auto-Organizer Works
+
+The AI-powered auto-organizer follows a sophisticated 5-step workflow to intelligently organize your downloaded media files:
+
+### **Step 1: 🔍 File Discovery**
+```
+Downloads Directory: /mnt/d/Completed/
+├── The.Dark.Knight.2008.1080p.BluRay.x264.mkv
+├── Game.of.Thrones.S01E01.720p.HDTV.x264.mkv  
+├── Planet.Earth.Documentary.2006.1080p.mkv
+└── Dave.Chappelle.Sticks.and.Stones.2019.mp4
+```
+- Recursively scans the downloads directory (`/mnt/d/Completed/`)
+- Identifies video files based on extensions (.mp4, .mkv, .avi, etc.)
+- Calculates file sizes for space management
+
+### **Step 2: 🤖 AI Classification**
+```
+🤖 Classifying 4 files using AI...
+[1/4] The.Dark.Knight.2008.1080p.BluRay.x264.mkv
+    Type: MOVIE (AI), Target: /mnt/qnap/plex/Movie/
+[2/4] Game.of.Thrones.S01E01.720p.HDTV.x264.mkv  
+    Type: TV (AI), Target: /mnt/qnap/plex/TV/
+[3/4] Planet.Earth.Documentary.2006.1080p.mkv
+    Type: DOCUMENTARY (AI), Target: /mnt/qnap/Media/Documentary/
+[4/4] Dave.Chappelle.Sticks.and.Stones.2019.mp4
+    Type: STANDUP (AI), Target: /mnt/qnap/Media/standups/
+```
+- **Primary**: Uses AWS Bedrock Claude 3.5 Sonnet for intelligent classification
+- **Fallback**: Rule-based pattern matching when AI is unavailable  
+- **Categories**: MOVIE, TV, DOCUMENTARY, STANDUP, AUDIOBOOK, OTHER
+- **Classification Source**: Clearly shows whether each result came from "AI" or "Rule-based" classification
+
+### **Step 3: 📂 Directory Mapping**
+```
+Classification Results:
+├── MOVIE → /mnt/qnap/plex/Movie/ (primary)
+│           /mnt/qnap/Media/Movies/ (fallback)
+│           /mnt/qnap/Multimedia/Movies/ (tertiary)
+├── TV → /mnt/qnap/plex/TV/ (primary)
+│        /mnt/qnap/Media/TV/ (fallback)  
+│        /mnt/qnap/Multimedia/TV/ (tertiary)
+├── DOCUMENTARY → /mnt/qnap/Media/Documentary/ (primary)
+└── STANDUP → /mnt/qnap/Media/standups/ (primary)
+```
+- Maps each media type to appropriate Plex directories
+- Provides multiple fallback locations for space management
+- Prioritizes directories based on configuration
+
+### **Step 4: 💾 Smart Organization**
+```
+📦 Organizing 4 files...
+├── MOVIE: The.Dark.Knight.2008.1080p.BluRay.x264.mkv
+│   ├── ✓ Space check: /mnt/qnap/plex/Movie/ (15.2GB available)
+│   ├── ✓ Create directory if needed
+│   └── ✅ Move: /mnt/qnap/plex/Movie/The.Dark.Knight.2008.1080p.BluRay.x264.mkv
+├── TV: Game.of.Thrones.S01E01.720p.HDTV.x264.mkv
+│   ├── ⚠️ Space check: /mnt/qnap/plex/TV/ (insufficient space)
+│   ├── ✓ Fallback: /mnt/qnap/Media/TV/ (8.7GB available)
+│   └── ✅ Move: /mnt/qnap/Media/TV/Game.of.Thrones.S01E01.720p.HDTV.x264.mkv
+└── [continues for all files...]
+```
+- **Space Checking**: Verifies sufficient disk space (file size + 1GB buffer)
+- **Directory Creation**: Creates target directories if they don't exist
+- **Conflict Resolution**: Handles filename conflicts with numbering
+- **Fallback Logic**: Tries alternative directories if primary is full
+
+### **Step 5: 📊 Comprehensive Reporting**
+```
+📄 AUTO-ORGANIZER REPORT
+============================================================
+Generated: 2025-06-14 18:30:15
+Mode: DRY RUN / EXECUTION
+Total Files Processed: 4
+Successful Moves: 4
+Failed Moves: 0
+Total Space Freed: 12.8 GB
+
+✅ SUCCESSFUL MOVES:
+────────────────────
+The.Dark.Knight.2008.1080p.BluRay.x264.mkv
+  FROM: /mnt/d/Completed/The.Dark.Knight.2008.1080p.BluRay.x264.mkv
+  TO:   /mnt/qnap/plex/Movie/The.Dark.Knight.2008.1080p.BluRay.x264.mkv
+  SIZE: 4.2 GB
+  TYPE: MOVIE (AI Classification)
+
+Game.of.Thrones.S01E01.720p.HDTV.x264.mkv
+  FROM: /mnt/d/Completed/Game.of.Thrones.S01E01.720p.HDTV.x264.mkv
+  TO:   /mnt/qnap/Media/TV/Game.of.Thrones.S01E01.720p.HDTV.x264.mkv
+  SIZE: 2.1 GB  
+  TYPE: TV (AI Classification)
+
+Planet.Earth.Documentary.2006.1080p.mkv
+  FROM: /mnt/d/Completed/Planet.Earth.Documentary.2006.1080p.mkv
+  TO:   /mnt/qnap/Media/Documentary/Planet.Earth.Documentary.2006.1080p.mkv
+  SIZE: 3.8 GB
+  TYPE: DOCUMENTARY (AI Classification)
+
+Dave.Chappelle.Sticks.and.Stones.2019.mp4
+  FROM: /mnt/d/Completed/Dave.Chappelle.Sticks.and.Stones.2019.mp4
+  TO:   /mnt/qnap/Media/standups/Dave.Chappelle.Sticks.and.Stones.2019.mp4
+  SIZE: 2.7 GB
+  TYPE: STANDUP (AI Classification)
+
+❌ FAILED MOVES:
+────────────────────
+Large.Movie.File.2024.4K.UHD.mkv
+  FROM: /mnt/d/Completed/Large.Movie.File.2024.4K.UHD.mkv
+  INTENDED TARGET: /mnt/qnap/plex/Movie/
+  TYPE: MOVIE (AI Classification)
+  ERROR: All target directories failed (space or access issues)
+```
+
+### **🛡️ Safety Features**
+- **Dry Run Mode**: Preview all operations before execution (default)
+- **Confirmation Required**: Must type "ORGANIZE" to proceed with actual moves
+- **Detailed Logging**: Complete audit trail of all operations
+- **Error Recovery**: Graceful handling of network issues, permission errors, etc.
+- **Rollback Capable**: Maintains source/target paths for potential rollback
+
+### **📈 Intelligence Features**
+- **Pattern Recognition**: Learns from filename patterns and structures
+- **Quality Detection**: Identifies resolution, codec, and source information
+- **Series Detection**: Recognizes season/episode patterns (S01E01, 1x01, etc.)
+- **Source Analysis**: Distinguishes between BluRay, WEBRip, HDTV sources
+- **Multi-Language**: Handles international titles and naming conventions
+
+### 📋 **Enhanced Report Details**
+
+Every auto-organizer operation generates a comprehensive report with complete transparency:
+
+#### **✅ Successful Moves Include:**
+- **Complete File Paths**: Full source and destination paths with filenames
+- **File Sizes**: Human-readable format (4.2 GB, 1.8 MB, etc.)
+- **Classification Details**: MOVIE, TV, DOCUMENTARY, STANDUP, AUDIOBOOK
+- **Classification Source**: "(AI Classification)" or "(Rule-based Classification)"
+- **Exact Destinations**: Shows precisely where each file was moved
+
+#### **❌ Failed Moves Include:**
+- **Source Path**: Complete path to the file that couldn't be moved
+- **Intended Target**: Shows where the file was supposed to go
+- **Classification Info**: Type and source of classification
+- **Specific Error**: Detailed reason for failure (space, permissions, network, etc.)
+
+#### **📊 Summary Statistics:**
+- Total files processed
+- Successful vs failed move counts  
+- Total disk space freed/organized
+- Execution mode (DRY RUN vs EXECUTION)
+- Timestamp for tracking
+
+This comprehensive reporting ensures you always know exactly what happened during organization, making the process completely transparent and auditable.
 
 ## 🔧 Detailed Usage
 
