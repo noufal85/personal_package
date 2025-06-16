@@ -66,6 +66,43 @@ Personal packages repository containing utility scripts and tools. Currently inc
 - Dry run mode shows what would be moved without making changes
 - Safety confirmations before executing moves
 
+#### AI-Powered Media Search and Analysis
+
+**Interactive Media Assistant:**
+- `python -m file_managers.plex.cli.media_assistant --interactive` - Start interactive natural language media search
+- `python -m file_managers.plex.cli.media_assistant "Do I have the movie The Batman?"` - Single query mode
+- `python -m file_managers.plex.cli.media_assistant "How many seasons of Breaking Bad do I have?"` - Season counting
+- `python -m file_managers.plex.cli.media_assistant "Am I missing episodes for Game of Thrones?"` - Missing episode analysis
+- `python run_media_assistant.py` - Interactive media assistant launcher
+
+**Natural Language Query Examples:**
+- Movie searches: "Do I have Inception?", "Is The Dark Knight in my collection?"
+- TV show searches: "Do I have Breaking Bad?", "What seasons of The Office do I have?"
+- Season counting: "How many seasons of Friends do I have?"
+- Missing episode detection: "Am I missing episodes for Lost season 3?"
+- General searches: "Find Stranger Things", "Search for Marvel movies"
+
+**Enhanced Features (with API keys):**
+- External database suggestions when media not found locally
+- Complete episode count verification against official sources
+- Missing episode detection with external API cross-reference
+- Enhanced AI processing with AWS Bedrock
+- Configure API keys in `.env` file in project root:
+  ```
+  TMDB_API_KEY=your_tmdb_key_here
+  TVDB_API_KEY=your_tvdb_key_here
+  AWS_ACCESS_KEY_ID=your_aws_key_here
+  AWS_SECRET_ACCESS_KEY=your_aws_secret_here
+  ```
+
+**AI-Powered Media Search Features:**
+- Natural language query processing using AWS Bedrock (Claude) or pattern matching fallback
+- Fuzzy matching for titles with typos or variations
+- Intelligent media type detection (movie vs TV show)
+- Season and episode analysis with completeness reporting
+- Integration with The Movie Database (TMDB) for metadata verification
+- Interactive and single-query modes for different use cases
+
 ## Architecture
 
 ### Package Structure
@@ -92,10 +129,15 @@ file_managers/
     │   ├── tv_scanner.py          # TV episode detection and analysis
     │   ├── tv_report_generator.py # TV report generation
     │   ├── tv_mover.py            # TV episode organization and moving
+    │   ├── ai_query_processor.py  # AI-powered natural language query processing
+    │   ├── episode_analyzer.py    # TV episode completeness analysis
+    │   ├── external_api.py        # External API integrations (TMDB, TVDB)
+    │   ├── media_searcher.py      # Media search and matching utilities
     │   └── tv_* (other TV modules) # Additional TV-related utilities
     └── cli/             # Plex CLI tools
         ├── __init__.py
-        └── movie_duplicates.py    # Movie duplicate scanner CLI
+        ├── movie_duplicates.py    # Movie duplicate scanner CLI
+        └── media_assistant.py     # AI-powered media assistant CLI
 ```
 
 ### Configuration System
@@ -129,6 +171,7 @@ file_managers/
 
 **Interactive Scripts:**
 - `run_movie_scanner.py` - Easy movie duplicate scanner launcher
+- `run_media_assistant.py` - Easy AI-powered media assistant launcher
 
 ### Design Patterns
 - Utility functions in `utils/` modules for reusable functionality

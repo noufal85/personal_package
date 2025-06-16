@@ -16,7 +16,14 @@ A comprehensive Python package for managing Plex media libraries, providing tool
 - **Smart Cleanup** - Automatically remove empty and small folders after organization
 - **Safety First** - Dry run mode shows what would be changed before making any moves
 
-### 🤖 AI-Powered Auto-Organizer
+### 🤖 AI-Powered Media Assistant
+- **Natural Language Queries** - Ask questions like "Do I have The Batman?" or "How many seasons of Breaking Bad do I have?"
+- **Smart Search** - Uses fuzzy matching and AI-powered query processing for accurate results
+- **Database Caching** - SQLite database for lightning-fast searches across large collections
+- **External API Integration** - TMDB/TVDB integration for enhanced metadata and missing episode detection
+- **Missing Episode Analysis** - Find gaps in your TV show collections with completeness reporting
+
+### 🤖 AI-Powered Auto-Organizer  
 - **Intelligent Classification** - Uses AWS Bedrock Claude 3.5 Sonnet to identify media types
 - **Multi-Format Support** - Handles movies, TV shows, documentaries, stand-up comedy, and audiobooks
 - **Smart Directory Selection** - Automatically chooses appropriate Plex directories with space checking
@@ -51,6 +58,35 @@ python -m file_managers.plex.cli.movie_duplicates
 
 # Scan custom directories
 python -m file_managers.plex.cli.movie_duplicates --custom "/path/to/movies1,/path/to/movies2"
+```
+
+### AI-Powered Media Assistant
+
+```bash
+# Interactive natural language media search
+python -m file_managers.plex.cli.media_assistant --interactive
+
+# Single query mode
+python -m file_managers.plex.cli.media_assistant "Do I have the movie The Batman?"
+
+# Season and episode analysis
+python -m file_managers.plex.cli.media_assistant "Am I missing episodes for Game of Thrones season 8?"
+
+# Rebuild database cache for faster searches
+python -m file_managers.plex.cli.media_assistant --rebuild-db
+```
+
+### Media Database Management
+
+```bash
+# Rebuild the entire media database
+python -m file_managers.plex.cli.media_database_cli --rebuild
+
+# Show database status and statistics
+python -m file_managers.plex.cli.media_database_cli --status
+
+# Show detailed database statistics
+python -m file_managers.plex.cli.media_database_cli --stats
 ```
 
 ### TV Show Organization
@@ -115,17 +151,25 @@ python -m file_managers.plex.utils.tv_mover --custom "/my/tv/path1,/my/tv/path2"
 - **Safety Features:** Dry run mode, confirmations, backups
 - **AI Classification:** Optional AWS Bedrock integration for intelligent media type detection
 
-### AWS Bedrock Configuration (Optional)
-For AI-powered media classification, create a `.env` file in the project root:
+### External API Configuration (Optional)
+For enhanced AI-powered features, create a `.env` file in the project root:
 
 ```bash
-# .env file
+# .env file - AI Media Assistant & Auto-Organizer
+TMDB_API_KEY=your_tmdb_key_here
+TVDB_API_KEY=your_tvdb_key_here
 AWS_ACCESS_KEY_ID=your_access_key_here
 AWS_SECRET_ACCESS_KEY=your_secret_key_here
 AWS_DEFAULT_REGION=us-east-1
+BEDROCK_MODEL_ID=anthropic.claude-3-5-sonnet-20241022-v2:0
 ```
 
-**Note:** AI classification is optional. The system works perfectly with rule-based classification as a fallback.
+**Benefits with API keys:**
+- **TMDB/TVDB**: Enhanced metadata, missing episode detection, external database suggestions
+- **AWS Bedrock**: Advanced AI-powered query processing and media classification
+- **Fallback**: All features work without API keys using pattern matching and local data
+
+**Note:** All features work without API keys, but external APIs provide enhanced accuracy and suggestions.
 
 ## 🔄 How Auto-Organizer Works
 
@@ -378,15 +422,25 @@ file_managers/
 ├── cli/                      # Command-line interfaces
 │   └── file_manager.py       # General file management
 └── plex/                     # Plex-specific functionality
+    ├── config/              # Configuration management
+    │   ├── config.py              # Python configuration interface
+    │   └── media_config.yaml      # YAML configuration file
     ├── utils/               # Plex utilities
     │   ├── movie_scanner.py       # Movie duplicate detection
     │   ├── report_generator.py    # Movie report generation
     │   ├── tv_scanner.py          # TV episode detection
     │   ├── tv_report_generator.py # TV report generation
     │   ├── tv_mover.py            # TV episode organization
-    │   └── deletion_manager.py    # Interactive deletion
+    │   ├── deletion_manager.py    # Interactive deletion
+    │   ├── ai_query_processor.py  # AI-powered query processing
+    │   ├── episode_analyzer.py    # TV episode completeness analysis
+    │   ├── external_api.py        # External API integrations (TMDB/TVDB)
+    │   ├── media_searcher.py      # Media search and matching
+    │   └── media_database.py      # SQLite database for fast searches
     └── cli/                 # Plex CLI tools
-        └── movie_duplicates.py    # Movie duplicate scanner
+        ├── movie_duplicates.py    # Movie duplicate scanner
+        ├── media_assistant.py     # AI-powered media assistant
+        └── media_database_cli.py  # Database management CLI
 ```
 
 ## 🔧 Development
