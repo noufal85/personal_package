@@ -478,6 +478,9 @@ class AutoOrganizer:
         
         print(f"📦 Organizing {len(classified_files)} files...")
         
+        total_processed = 0
+        total_files = len(classified_files)
+        
         for media_type, files in files_by_type.items():
             print(f"\n📂 Processing {len(files)} {media_type.value} items:")
             
@@ -492,9 +495,36 @@ class AutoOrganizer:
                     ))
                 continue
             
-            for media_file in files:
+            for i, media_file in enumerate(files, 1):
+                total_processed += 1
+                item_type = "directory" if media_file.path.is_dir() else "file"
+                
+                # Progress indicator
+                progress_percent = (total_processed / total_files) * 100
+                print(f"\n  📋 [{total_processed}/{total_files}] ({progress_percent:.1f}%) Processing {item_type}: '{media_file.path.name}'")
+                
+                # Show classification info
+                if media_file.show_name:
+                    show_info = f" ({media_file.show_name}"
+                    if media_file.season and media_file.episode:
+                        show_info += f" S{media_file.season:02d}E{media_file.episode:02d}"
+                    show_info += ")"
+                    print(f"    📺 Detected as: {media_file.media_type.value}{show_info}")
+                else:
+                    print(f"    🎬 Classified as: {media_file.media_type.value}")
+                
+                # Show file size for large files
+                if media_file.size > 1024 * 1024 * 100:  # > 100MB
+                    print(f"    📏 Size: {self._format_size(media_file.size)}")
+                
                 result = self._move_file(media_file)
                 results.append(result)
+                
+                # Show immediate result
+                if result.success:
+                    print(f"    ✅ Move completed successfully")
+                else:
+                    print(f"    ❌ Move failed: {result.error}")
         
         return results
     
@@ -588,7 +618,7 @@ class AutoOrganizer:
         # Perform the move
         if self.dry_run:
             item_type = "directory" if media_file.path.is_dir() else "file"
-            print(f"    📋 DRY RUN: Would move {item_type} to {final_target}")
+            print(f"    📋 DRY RUN: Would move {item_type} '{media_file.path.name}' from {media_file.path.parent} to {final_target}")
             return MoveResult(
                 success=True,
                 source_path=media_file.path,
@@ -598,12 +628,14 @@ class AutoOrganizer:
             try:
                 if media_file.path.is_dir():
                     # Move entire directory
+                    print(f"    🚚 Moving directory '{media_file.path.name}' from {media_file.path.parent} to {final_target.parent}/...")
                     shutil.move(str(media_file.path), str(final_target))
-                    print(f"    ✅ Moved directory to {final_target}")
+                    print(f"    ✅ Successfully moved directory '{media_file.path.name}' to {final_target}")
                 else:
                     # Move single file
+                    print(f"    🚚 Moving file '{media_file.path.name}' from {media_file.path.parent} to {final_target.parent}/...")
                     shutil.move(str(media_file.path), str(final_target))
-                    print(f"    ✅ Moved file to {final_target}")
+                    print(f"    ✅ Successfully moved file '{media_file.path.name}' to {final_target}")
                 
                 return MoveResult(
                     success=True,
@@ -612,6 +644,7 @@ class AutoOrganizer:
                     space_freed=media_file.size
                 )
             except Exception as e:
+                print(f"    ❌ Failed to move '{media_file.path.name}': {e}")
                 return MoveResult(
                     success=False,
                     source_path=media_file.path,
@@ -645,20 +678,25 @@ class AutoOrganizer:
             show_dir_name = self._sanitize_show_name(media_file.show_name)
             show_path = tv_base_path / show_dir_name
             
+            print(f"    📺 Creating new show directory: '{show_dir_name}' in {tv_base_path}")
+            
             # Try to create and move to the show directory
             if not self.dry_run:
                 try:
                     show_path.mkdir(exist_ok=True)
-                    print(f"    📺 Created/found show directory: {show_path}")
+                    if show_path.exists():
+                        print(f"    ✅ Show directory ready: {show_path}")
+                    else:
+                        print(f"    📁 Show directory already exists: {show_path}")
                 except OSError as e:
-                    print(f"    ❌ Failed to create show directory {show_path}: {e}")
+                    print(f"    ❌ Failed to create show directory '{show_dir_name}': {e}")
                     continue
+            else:
+                print(f"    📋 DRY RUN: Would create show directory: {show_path}")
             
             # Try to move the episode to the show directory
             result = self._try_move_to_directory(media_file, show_path)
             if result.success:
-                if not self.dry_run:
-                    print(f"    🎬 Created new show directory and moved episode")
                 return result
         
         # If we get here, all TV directories failed
@@ -853,22 +891,29 @@ class AutoOrganizer:
             classified_files = self.classify_files(media_files)
             
             # Step 3: Organize files
+            print(f"\n🚀 Starting file organization...")
             results = self.organize_files(classified_files)
+            
+            # Real-time summary during processing
+            successful = sum(1 for r in results if r.success)
+            failed = sum(1 for r in results if not r.success)
+            total_space_freed = sum(r.space_freed for r in results if r.success)
+            
+            print(f"\n🎯 ORGANIZATION COMPLETE!")
+            print(f"  ✅ Successful moves: {successful}")
+            print(f"  ❌ Failed moves: {failed}")
+            print(f"  📊 Total processed: {len(results)}")
+            if total_space_freed > 0:
+                print(f"  💾 Space freed: {self._format_size(total_space_freed)}")
             
             # Step 4: Generate report
             report_path = self.generate_report(results, classified_files)
-            print(f"\n📄 Report generated: {report_path}")
-            
-            # Step 5: Summary
-            successful = sum(1 for r in results if r.success)
-            failed = sum(1 for r in results if not r.success)
-            print(f"\n📊 SUMMARY:")
-            print(f"  Successful: {successful}")
-            print(f"  Failed: {failed}")
-            print(f"  Total: {len(results)}")
+            print(f"\n📄 Detailed report generated: {report_path}")
             
             if not self.dry_run and successful > 0:
                 print(f"🎉 Successfully organized {successful} media files!")
+            elif self.dry_run:
+                print(f"📋 Dry run completed - run with --execute to actually move files")
             
             return report_path
             
