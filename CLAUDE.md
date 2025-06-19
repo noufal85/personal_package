@@ -134,6 +134,15 @@ file_managers/
     │   ├── external_api.py        # External API integrations (TMDB, TVDB)
     │   ├── media_searcher.py      # Media search and matching utilities
     │   └── tv_* (other TV modules) # Additional TV-related utilities
+    ├── media_autoorganizer/     # Intelligent media file auto-organizer (NEW)
+    │   ├── __init__.py          # Package exports
+    │   ├── README.md            # Comprehensive documentation
+    │   ├── cli.py               # Command-line interface
+    │   ├── organizer.py         # Main AutoOrganizer orchestrator class
+    │   ├── models.py            # Data structures (MediaFile, MoveResult, etc.)
+    │   ├── media_database.py    # Interface to existing media database
+    │   ├── classification_db.py # SQLite caching for classifications
+    │   └── ai_classifier.py     # AWS Bedrock AI classification
     └── cli/             # Plex CLI tools
         ├── __init__.py
         ├── movie_duplicates.py    # Movie duplicate scanner CLI
@@ -169,9 +178,32 @@ file_managers/
 - Available in both human-readable (.txt) and machine-readable (.json) formats
 - Timestamped filenames with configurable format
 
+#### Media Auto-Organizer
+
+**Intelligent Media File Organization:**
+- `python -m file_managers.plex.media_autoorganizer.cli` - Full-featured auto-organizer CLI
+- `python run_media_autoorganizer.py` - Convenience launcher script
+- `python -m file_managers.plex.media_autoorganizer.cli --execute` - Actually organize files
+- `python -m file_managers.plex.media_autoorganizer.cli --no-ai` - Rule-based classification only
+- `python -m file_managers.plex.media_autoorganizer.cli --db-stats` - Show classification database stats
+- `python -m file_managers.plex.media_autoorganizer.cli --verify-mounts` - Check mount access
+
+**Auto-Organizer Features:**
+- Intelligent TV episode placement using existing show locations from media database
+- Smart fallback across multiple QNAP directories when access/space issues occur
+- AI-powered classification (AWS Bedrock) with rule-based fallback
+- Multi-tier caching (SQLite + CSV) to avoid repeated classifications
+- Comprehensive error handling and directory access validation
+- Detailed reporting with show information and move results
+- Dry run mode for safe preview before execution
+- New show directory creation in appropriate TV base directories
+- Space management with 1GB safety buffer
+- Filename conflict resolution
+
 **Interactive Scripts:**
 - `run_movie_scanner.py` - Easy movie duplicate scanner launcher
 - `run_media_assistant.py` - Easy AI-powered media assistant launcher
+- `run_media_autoorganizer.py` - Easy media auto-organizer launcher
 
 ### Design Patterns
 - Utility functions in `utils/` modules for reusable functionality

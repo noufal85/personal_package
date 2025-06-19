@@ -1,0 +1,1693 @@
+"""Auto-organizer for downloaded media files using AI classification and smart placement."""
+
+import csv
+import json
+import os
+import random
+import re
+import shutil
+import sqlite3
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
+from enum import Enum
+
+import boto3
+from botocore.exceptions import ClientError, NoCredentialsError
+
+from ..config.config import config
+
+# Load environment variables from .env file if available
+def load_env_file():
+    """Load environment variables from .env file in project root."""
+    env_path = Path(__file__).parent.parent.parent.parent / ".env"
+    if env_path.exists():
+        with open(env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    os.environ[key.strip()] = value.strip()
+
+# Load .env file on module import
+load_env_file()
+
+
+class ClassificationDatabase:
+    """SQLite database for storing media classifications."""
+    
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_database()
+    
+    def _init_database(self) -> None:
+        """Initialize the database with required tables."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS classifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    filename TEXT NOT NULL UNIQUE,
+                    media_type TEXT NOT NULL,
+                    classification_source TEXT NOT NULL,
+                    confidence REAL DEFAULT 0.0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Create index for faster lookups
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_filename 
+                ON classifications (filename)
+            """)
+            
+            conn.commit()
+    
+    def get_classification(self, filename: str) -> Optional[Tuple[str, str, float]]:
+        """
+        Get cached classification for a filename.
+        
+        Args:
+            filename: Name of the file to look up
+            
+        Returns:
+            Tuple of (media_type, classification_source, confidence) or None
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("""
+                SELECT media_type, classification_source, confidence 
+                FROM classifications 
+                WHERE filename = ?
+            """, (filename,))
+            
+            row = cursor.fetchone()
+            return row if row else None
+    
+    def store_classification(self, filename: str, media_type: str, 
+                           classification_source: str, confidence: float = 0.0) -> None:
+        """
+        Store or update a classification in the database.
+        
+        Args:
+            filename: Name of the file
+            media_type: Classified media type
+            classification_source: Source of classification (AI, Rule-based, etc.)
+            confidence: Confidence score (0.0 to 1.0)
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO classifications 
+                (filename, media_type, classification_source, confidence, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, (filename, media_type, classification_source, confidence))
+            
+            conn.commit()
+    
+    def store_batch_classifications(self, classifications: List[Tuple[str, str, str, float]]) -> None:
+        """
+        Store multiple classifications in batch.
+        
+        Args:
+            classifications: List of (filename, media_type, classification_source, confidence) tuples
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.executemany("""
+                INSERT OR REPLACE INTO classifications 
+                (filename, media_type, classification_source, confidence, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, classifications)
+            
+            conn.commit()
+    
+    def get_stats(self) -> Dict[str, int]:
+        """Get database statistics."""
+        with sqlite3.connect(self.db_path) as conn:
+            # Total classifications
+            total = conn.execute("SELECT COUNT(*) FROM classifications").fetchone()[0]
+            
+            # By media type
+            type_counts = conn.execute("""
+                SELECT media_type, COUNT(*) 
+                FROM classifications 
+                GROUP BY media_type
+            """).fetchall()
+            
+            # By source
+            source_counts = conn.execute("""
+                SELECT classification_source, COUNT(*) 
+                FROM classifications 
+                GROUP BY classification_source
+            """).fetchall()
+            
+            return {
+                'total': total,
+                'by_type': dict(type_counts),
+                'by_source': dict(source_counts)
+            }
+    
+    def clear_database(self) -> None:
+        """Clear all classifications from database."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("DELETE FROM classifications")
+            conn.commit()
+
+
+class MediaDatabase:
+    """Interface to the prebuilt media database for show location detection."""
+    
+    def __init__(self):
+        self.database_path = Path(__file__).parent.parent.parent.parent / "database" / "media_database.json"
+        self.media_data = None
+        self.tv_shows = {}
+        self.failed_directories = set()  # Track directories with access issues
+        self._load_database()
+    
+    def _load_database(self) -> None:
+        """Load the media database JSON file."""
+        try:
+            if self.database_path.exists():
+                with open(self.database_path, 'r', encoding='utf-8') as f:
+                    self.media_data = json.load(f)
+                    self.tv_shows = self.media_data.get('tv_shows', {})
+                print(f"📚 Loaded media database with {len(self.tv_shows)} TV shows")
+            else:
+                print(f"⚠️ Media database not found at {self.database_path}")
+        except Exception as e:
+            print(f"❌ Error loading media database: {e}")
+            self.tv_shows = {}
+    
+    def find_tv_show_location(self, show_name: str) -> Optional[str]:
+        """
+        Find the existing directory for a TV show.
+        
+        Args:
+            show_name: Name of the TV show to find
+            
+        Returns:
+            Path to the show's directory, or None if not found
+        """
+        if not self.tv_shows:
+            return None
+        
+        # Normalize the show name for comparison
+        normalized_input = self._normalize_show_name(show_name)
+        
+        # First try exact match
+        if normalized_input in self.tv_shows:
+            return self._get_best_directory(self.tv_shows[normalized_input])
+        
+        # Try fuzzy matching
+        for normalized_name, show_data in self.tv_shows.items():
+            if self._shows_match(normalized_input, normalized_name):
+                return self._get_best_directory(show_data)
+        
+        return None
+    
+    def _normalize_show_name(self, name: str) -> str:
+        """Normalize show name for comparison."""
+        # Remove year, parentheses, and common variations
+        name = re.sub(r'\(\d{4}\)', '', name)  # Remove (2023) etc
+        name = re.sub(r'\d{4}', '', name)      # Remove standalone years
+        name = re.sub(r'[^\w\s]', '', name)    # Remove special characters
+        name = ' '.join(name.split())          # Normalize whitespace
+        return name.lower().strip()
+    
+    def _shows_match(self, name1: str, name2: str) -> bool:
+        """Check if two show names match using fuzzy logic."""
+        # Direct match
+        if name1 == name2:
+            return True
+        
+        # Check if one contains the other
+        if name1 in name2 or name2 in name1:
+            return True
+        
+        # Word-by-word matching for multi-word titles
+        words1 = set(name1.split())
+        words2 = set(name2.split())
+        
+        # If most words match, consider it a match
+        if len(words1) > 1 and len(words2) > 1:
+            intersection = words1.intersection(words2)
+            union = words1.union(words2)
+            similarity = len(intersection) / len(union)
+            return similarity >= 0.6
+        
+        return False
+    
+    def _get_best_directory(self, show_data: Dict) -> Optional[str]:
+        """
+        Get the best available directory for a show, avoiding failed ones.
+        
+        Args:
+            show_data: Show data from the database
+            
+        Returns:
+            Best available directory path
+        """
+        directories = show_data.get('directories', [])
+        if not directories:
+            return None
+        
+        # Filter out failed directories
+        available_dirs = [d for d in directories if d not in self.failed_directories]
+        
+        if not available_dirs:
+            # All directories failed, try the first one again (maybe issue resolved)
+            available_dirs = directories[:1]
+        
+        # Return the first available directory (they're usually ordered by preference)
+        return available_dirs[0]
+    
+    def mark_directory_failed(self, directory: str) -> None:
+        """Mark a directory as failed/inaccessible."""
+        self.failed_directories.add(directory)
+        print(f"🚫 Marked directory as failed: {directory}")
+    
+    def extract_tv_info(self, filename: str) -> Tuple[Optional[str], Optional[int], Optional[int]]:
+        """
+        Extract show name, season, and episode from filename.
+        
+        Args:
+            filename: Name of the file to analyze
+            
+        Returns:
+            Tuple of (show_name, season, episode) or (None, None, None)
+        """
+        # Common TV show patterns
+        patterns = [
+            # Show.Name.S01E01.Title.mkv
+            r'(.+?)\.S(\d+)E(\d+)',
+            # Show Name - S01E01 - Title.mkv  
+            r'(.+?)\s*-\s*S(\d+)E(\d+)',
+            # Show.Name.1x01.Title.mkv
+            r'(.+?)\.(\d+)x(\d+)',
+            # Show Name (2023) S01E01.mkv
+            r'(.+?)\s*(?:\(\d{4}\))?\s*S(\d+)E(\d+)',
+            # [Group] Show Name - 01 [Season 1].mkv (anime style)
+            r'(?:\[.+?\])?\s*(.+?)\s*-\s*(\d+)\s*(?:\[Season\s*(\d+)\])?',
+        ]
+        
+        filename_clean = filename.replace('_', ' ')
+        
+        for pattern in patterns:
+            match = re.search(pattern, filename_clean, re.IGNORECASE)
+            if match:
+                show_name = match.group(1).replace('.', ' ').strip()
+                season = int(match.group(2)) if match.group(2) else 1
+                episode = int(match.group(3)) if match.group(3) else None
+                
+                # Clean up show name
+                show_name = re.sub(r'\s+', ' ', show_name)  # Normalize spaces
+                show_name = show_name.strip()
+                
+                return show_name, season, episode
+        
+        return None, None, None
+
+
+class MediaType(Enum):
+    """Supported media types for classification."""
+    MOVIE = "MOVIE"
+    TV = "TV" 
+    DOCUMENTARY = "DOCUMENTARY"
+    STANDUP = "STANDUP"
+    AUDIOBOOK = "AUDIOBOOK"
+    OTHER = "OTHER"
+
+
+class ClassificationResult(NamedTuple):
+    """Result of AI classification."""
+    media_type: MediaType
+    confidence: float
+    reasoning: Optional[str] = None
+
+
+class MediaFile(NamedTuple):
+    """Represents a media file to be organized."""
+    path: Path
+    size: int
+    media_type: Optional[MediaType] = None
+    target_directory: Optional[str] = None
+    classification_source: Optional[str] = None  # "AI" or "Rule-based"
+    show_name: Optional[str] = None  # For TV episodes, the detected show name
+    season: Optional[int] = None  # For TV episodes, the detected season
+    episode: Optional[int] = None  # For TV episodes, the detected episode
+
+
+class MoveResult(NamedTuple):
+    """Result of a file move operation."""
+    success: bool
+    source_path: Path
+    target_path: Optional[Path] = None
+    error: Optional[str] = None
+    space_freed: int = 0
+
+
+class BedrockClassifier:
+    """AI-powered media classification using AWS Bedrock."""
+    
+    def __init__(self):
+        self.region = config.bedrock_region
+        self.model_id = config.bedrock_model_id
+        self.client = None
+        self._initialize_client()
+    
+    def _initialize_client(self) -> None:
+        """Initialize the Bedrock client."""
+        try:
+            self.client = boto3.client('bedrock-runtime', region_name=self.region)
+            # Test the client by making a simple API call
+            self._test_model_access()
+        except NoCredentialsError:
+            print("❌ AWS credentials not configured. Cannot use AI classification.")
+            raise RuntimeError("AWS credentials required for AI classification")
+        except Exception as e:
+            print(f"❌ Failed to initialize Bedrock client: {e}")
+            raise RuntimeError(f"Bedrock client initialization failed: {e}")
+    
+    def _test_model_access(self) -> None:
+        """Test if the model is accessible."""
+        try:
+            # Simple test classification
+            test_prompt = "Test filename: example.mkv"
+            
+            if "anthropic" in self.model_id:
+                body = json.dumps({
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 10,
+                    "temperature": 0.1,
+                    "messages": [{"role": "user", "content": test_prompt}]
+                })
+            else:
+                body = json.dumps({
+                    "prompt": test_prompt,
+                    "max_gen_len": 10,
+                    "temperature": 0.1,
+                    "top_p": 0.9
+                })
+            
+            response = self.client.invoke_model(
+                body=body,
+                modelId=self.model_id,
+                accept='application/json',
+                contentType='application/json'
+            )
+            print("✅ Bedrock model access verified")
+            
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            error_message = e.response['Error']['Message']
+            print(f"❌ Model access test failed: {error_code}")
+            print(f"   Model ID: {self.model_id}")
+            print(f"   Region: {self.region}")
+            print(f"   Message: {error_message}")
+            
+            if error_code == 'AccessDeniedException':
+                raise RuntimeError(f"No access to model {self.model_id} in region {self.region}. Check model permissions in AWS Console.")
+            elif error_code == 'ValidationException':
+                raise RuntimeError(f"Invalid model ID {self.model_id} for region {self.region}")
+            else:
+                raise RuntimeError(f"Model access failed: {error_message} (Model: {self.model_id}, Region: {self.region})")
+        except Exception as e:
+            raise RuntimeError(f"Model access test failed: {e} (Model: {self.model_id}, Region: {self.region})")
+    
+    def classify_batch(self, filenames: List[str], max_retries: int = 3) -> List[ClassificationResult]:
+        """
+        Classify multiple files in a single batch request.
+        
+        Args:
+            filenames: List of filenames to classify
+            max_retries: Maximum number of retry attempts
+            
+        Returns:
+            List of ClassificationResult objects
+        """
+        if not self.client:
+            return [self._fallback_classification(filename) for filename in filenames]
+        
+        batch_prompt = self._create_batch_prompt(filenames)
+        
+        for attempt in range(max_retries + 1):
+            try:
+                # Prepare the request body based on model type
+                if "anthropic" in self.model_id:
+                    body = json.dumps({
+                        "anthropic_version": "bedrock-2023-05-31",
+                        "max_tokens": config.bedrock_max_tokens * 2,  # More tokens for batch
+                        "temperature": config.bedrock_temperature,
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": batch_prompt
+                            }
+                        ]
+                    })
+                else:  # Llama or other models
+                    body = json.dumps({
+                        "prompt": batch_prompt,
+                        "max_gen_len": config.bedrock_max_tokens * 2,
+                        "temperature": config.bedrock_temperature,
+                        "top_p": 0.9
+                    })
+                
+                # Make the API call
+                response = self.client.invoke_model(
+                    body=body,
+                    modelId=self.model_id,
+                    accept='application/json',
+                    contentType='application/json'
+                )
+                
+                # Parse the response
+                response_body = json.loads(response['body'].read())
+                if "anthropic" in self.model_id:
+                    response_text = response_body['content'][0]['text'].strip()
+                else:  # Llama or other models
+                    response_text = response_body['generation'].strip()
+                
+                # Parse batch results
+                return self._parse_batch_response(response_text, filenames)
+                
+            except ClientError as e:
+                error_code = e.response['Error']['Code']
+                if error_code == 'ThrottlingException' and attempt < max_retries:
+                    # Exponential backoff with jitter
+                    delay = (2 ** attempt) + random.uniform(0, 1)
+                    print(f"⏳ Throttling detected, retrying in {delay:.1f} seconds (attempt {attempt + 1}/{max_retries + 1})")
+                    time.sleep(delay)
+                    continue
+                else:
+                    print(f"⚠️ Batch classification failed: {e}")
+                    return [self._fallback_classification(filename) for filename in filenames]
+            except Exception as e:
+                print(f"⚠️ Batch classification error: {e}")
+                return [self._fallback_classification(filename) for filename in filenames]
+        
+        # If all retries failed
+        return [self._fallback_classification(filename) for filename in filenames]
+    
+    def _create_batch_prompt(self, filenames: List[str]) -> str:
+        """Create a batch classification prompt."""
+        files_list = "\n".join([f"{i+1}. {filename}" for i, filename in enumerate(filenames)])
+        
+        prompt = f"""Analyze the following {len(filenames)} filenames and classify each as one of these media types:
+- MOVIE: Feature films, movies
+- TV: TV series episodes, shows  
+- DOCUMENTARY: Documentary films or series
+- STANDUP: Stand-up comedy specials
+- AUDIOBOOK: Audio books
+- OTHER: Anything else
+
+Files to classify:
+{files_list}
+
+Respond with a JSON array containing the classification for each file in order. Each entry should have "filename" and "type" fields.
+
+Example response format:
+[
+  {{"filename": "The.Dark.Knight.2008.1080p.BluRay.mkv", "type": "MOVIE"}},
+  {{"filename": "Game.of.Thrones.S01E01.720p.HDTV.mkv", "type": "TV"}},
+  {{"filename": "Planet.Earth.Documentary.2006.1080p.mkv", "type": "DOCUMENTARY"}}
+]
+
+Response:"""
+        return prompt
+    
+    def _parse_batch_response(self, response_text: str, filenames: List[str]) -> List[ClassificationResult]:
+        """Parse the batch response JSON."""
+        try:
+            # Try to extract JSON from response
+            json_start = response_text.find('[')
+            json_end = response_text.rfind(']') + 1
+            
+            if json_start >= 0 and json_end > json_start:
+                json_text = response_text[json_start:json_end]
+                classifications = json.loads(json_text)
+                
+                results = []
+                for i, filename in enumerate(filenames):
+                    if i < len(classifications):
+                        try:
+                            media_type_str = classifications[i].get('type', 'MOVIE').upper()
+                            media_type = MediaType(media_type_str)
+                            results.append(ClassificationResult(media_type=media_type, confidence=0.8))
+                        except (ValueError, KeyError):
+                            results.append(self._fallback_classification(filename))
+                    else:
+                        results.append(self._fallback_classification(filename))
+                
+                return results
+            else:
+                raise ValueError("No JSON array found in response")
+                
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            print(f"⚠️ Failed to parse batch response: {e}")
+            # Fallback to individual classification
+            return [self._fallback_classification(filename) for filename in filenames]
+    
+    def classify_file(self, filename: str) -> ClassificationResult:
+        """
+        Classify a media file using AI.
+        
+        Args:
+            filename: Name of the file to classify
+            
+        Returns:
+            ClassificationResult with media type and confidence
+        """
+        if not self.client:
+            # Fallback to rule-based classification
+            return self._fallback_classification(filename)
+        
+        try:
+            # Prepare the prompt
+            prompt = config.bedrock_classification_prompt.format(filename=filename)
+            
+            # Prepare the request body based on model type
+            if "anthropic" in config.bedrock_model_id:
+                body = json.dumps({
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": config.bedrock_max_tokens,
+                    "temperature": config.bedrock_temperature,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ]
+                })
+            else:  # Llama or other models
+                body = json.dumps({
+                    "prompt": prompt,
+                    "max_gen_len": config.bedrock_max_tokens,
+                    "temperature": config.bedrock_temperature,
+                    "top_p": 0.9
+                })
+            
+            # Make the API call
+            try:
+                response = self.client.invoke_model(
+                    body=body,
+                    modelId=config.bedrock_model_id,
+                    accept='application/json',
+                    contentType='application/json'
+                )
+            except ClientError as e:
+                if "inference profile" in str(e):
+                    # Try with inference profile for newer models
+                    profile_id = f"us.{config.bedrock_model_id}"
+                    response = self.client.invoke_model(
+                        body=body,
+                        modelId=profile_id,
+                        accept='application/json',
+                        contentType='application/json'
+                    )
+                else:
+                    raise
+            
+            # Parse the response based on model type
+            response_body = json.loads(response['body'].read())
+            if "anthropic" in config.bedrock_model_id:
+                classification_text = response_body['content'][0]['text'].strip().upper()
+            else:  # Llama or other models
+                classification_text = response_body['generation'].strip().upper()
+            
+            # Map response to MediaType
+            try:
+                media_type = MediaType(classification_text)
+                return ClassificationResult(media_type=media_type, confidence=0.9)
+            except ValueError:
+                # If the response doesn't match our enum, try to extract it
+                for media_type in MediaType:
+                    if media_type.value in classification_text:
+                        return ClassificationResult(media_type=media_type, confidence=0.7)
+                
+                # Fallback to OTHER
+                return ClassificationResult(media_type=MediaType.OTHER, confidence=0.1)
+        
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            if error_code == 'ThrottlingException':
+                print(f"⚠️  Throttling detected for {filename}, using fallback classification")
+                # Use fallback instead of retrying to avoid further throttling
+                return self._fallback_classification(filename)
+            else:
+                print(f"⚠️  Bedrock API error: {e}")
+                return self._fallback_classification(filename)
+        except Exception as e:
+            print(f"⚠️  Classification error: {e}")
+            return self._fallback_classification(filename)
+    
+    def _fallback_classification(self, filename: str) -> ClassificationResult:
+        """
+        Fallback rule-based classification when AI is unavailable.
+        
+        Args:
+            filename: Name of the file to classify
+            
+        Returns:
+            ClassificationResult based on filename patterns
+        """
+        filename_lower = filename.lower()
+        
+        # TV show patterns (more specific patterns first)
+        tv_patterns = [
+            's0', 's1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9',
+            'season', 'episode', 'e0', 'e1', 'e2', 'e3', 'e4', 'e5',
+            'hdtv', 'tv.', '.tv.'
+        ]
+        
+        # Documentary patterns
+        doc_patterns = [
+            'documentary', 'docu', 'bbc', 'nat geo', 'national geographic',
+            'history channel', 'discovery', 'nova', 'frontline'
+        ]
+        
+        # Stand-up patterns
+        standup_patterns = [
+            'standup', 'stand-up', 'comedy special', 'live at', 'comedy central',
+            'netflix comedy', 'hbo comedy', 'chappelle', 'carlin', 'rock', 'burr',
+            'sticks and stones', 'killed them softly', 'raw', 'delirious'
+        ]
+        
+        # Check patterns in order of specificity
+        if any(pattern in filename_lower for pattern in doc_patterns):
+            return ClassificationResult(media_type=MediaType.DOCUMENTARY, confidence=0.7)
+        elif any(pattern in filename_lower for pattern in standup_patterns):
+            return ClassificationResult(media_type=MediaType.STANDUP, confidence=0.7)
+        elif any(pattern in filename_lower for pattern in tv_patterns):
+            return ClassificationResult(media_type=MediaType.TV, confidence=0.6)
+        else:
+            # Default to movie for video files
+            return ClassificationResult(media_type=MediaType.MOVIE, confidence=0.4)
+
+
+class AutoOrganizer:
+    """Automatic media file organizer."""
+    
+    def __init__(self, dry_run: bool = True, use_ai: bool = True):
+        self.dry_run = dry_run
+        self.use_ai = use_ai
+        
+        if use_ai:
+            try:
+                self.classifier = BedrockClassifier()
+            except RuntimeError as e:
+                print(f"❌ Failed to initialize AI classifier: {e}")
+                print("💡 Falling back to rule-based classification only")
+                self.classifier = None
+                self.use_ai = False
+        else:
+            print("🔧 Using rule-based classification only (AI disabled)")
+            self.classifier = None
+            
+        self.downloads_dir = Path(config.downloads_directory)
+        self.cache_file = self.downloads_dir / ".media_classification_cache.csv"
+        
+        # Initialize classification database
+        project_root = Path(__file__).parent.parent.parent.parent
+        db_dir = project_root / "database"
+        self.db = ClassificationDatabase(db_dir / "media_classifications.db")
+        
+        # Initialize media database for show location detection
+        self.media_db = MediaDatabase()
+    
+    def verify_mount_access(self) -> bool:
+        """
+        Verify all target directories are accessible and writable.
+        
+        Returns:
+            True if all directories are accessible, False otherwise
+        """
+        print("🔍 Verifying mount access and directory permissions...")
+        
+        all_directories = [
+            *config.movie_directories,
+            *config.tv_directories,
+            *config.documentary_directories,
+            *config.standup_directories
+        ]
+        
+        failed_dirs = []
+        
+        for directory in all_directories:
+            dir_path = Path(directory)
+            
+            # Check if directory exists
+            if not dir_path.exists():
+                print(f"    ❌ Directory does not exist: {directory}")
+                failed_dirs.append(directory)
+                continue
+            
+            # Check if it's actually a directory
+            if not dir_path.is_dir():
+                print(f"    ❌ Path exists but is not a directory: {directory}")
+                failed_dirs.append(directory)
+                continue
+            
+            # Check write permissions
+            if not os.access(dir_path, os.W_OK):
+                print(f"    ❌ No write permission: {directory}")
+                failed_dirs.append(directory)
+                continue
+            
+            # Try to create a test file
+            test_file = dir_path / ".access_test"
+            try:
+                test_file.touch()
+                test_file.unlink()  # Remove test file
+                print(f"    ✅ Accessible: {directory}")
+            except Exception as e:
+                print(f"    ❌ Cannot write to directory: {directory} ({e})")
+                failed_dirs.append(directory)
+        
+        if failed_dirs:
+            print(f"\n❌ MOUNT ACCESS VERIFICATION FAILED")
+            print(f"   {len(failed_dirs)} directories are not accessible:")
+            for failed_dir in failed_dirs:
+                print(f"   - {failed_dir}")
+            
+            self._show_mount_help()
+            return False
+        else:
+            print(f"\n✅ MOUNT ACCESS VERIFICATION PASSED")
+            print(f"   All {len(all_directories)} target directories are accessible")
+            return True
+    
+    def _show_mount_help(self) -> None:
+        """Show mount commands to help user remount QNAP shares."""
+        print("\n🔧 QNAP MOUNT REQUIRED")
+        print("=" * 40)
+        print("Please run these 3 commands to mount QNAP shares:")
+        print()
+        
+        # Get QNAP configuration
+        qnap_ip = config.nas_server_ip
+        shares = config.nas_shares
+        
+        # Show only the essential mount commands
+        for share in shares:
+            share_name = share['name']
+            mount_path = share['mount_path']
+            print(f"sudo mount -t cifs //{qnap_ip}/{share_name} {mount_path} -o username=noufal85,uid=$(id -u),gid=$(id -g),iocharset=utf8,file_mode=0777,dir_mode=0777")
+        
+        print()
+        print("💡 Run this script again after mounting")
+    
+    def load_classification_cache(self) -> Dict[str, Tuple[str, str]]:
+        """
+        Load previously cached classifications.
+        
+        Returns:
+            Dictionary mapping filename to (media_type, classification_source)
+        """
+        cache = {}
+        
+        if not self.cache_file.exists():
+            return cache
+        
+        try:
+            with open(self.cache_file, 'r', newline='', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    filename = row['filename']
+                    media_type = row['media_type']
+                    classification_source = row['classification_source']
+                    cache[filename] = (media_type, classification_source)
+            
+            print(f"📋 Loaded {len(cache)} cached classifications from {self.cache_file}")
+        except Exception as e:
+            print(f"⚠️  Error loading classification cache: {e}")
+        
+        return cache
+    
+    def save_classification_cache(self, classified_files: List[MediaFile]) -> None:
+        """
+        Save classifications to cache file.
+        
+        Args:
+            classified_files: List of classified MediaFile objects
+        """
+        try:
+            with open(self.cache_file, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=['filename', 'media_type', 'classification_source', 'timestamp'])
+                writer.writeheader()
+                
+                for media_file in classified_files:
+                    writer.writerow({
+                        'filename': media_file.path.name,
+                        'media_type': media_file.media_type.value if media_file.media_type else 'UNKNOWN',
+                        'classification_source': media_file.classification_source or 'Unknown',
+                        'timestamp': datetime.now().isoformat()
+                    })
+            
+            print(f"💾 Saved {len(classified_files)} classifications to cache")
+        except Exception as e:
+            print(f"⚠️  Error saving classification cache: {e}")
+        
+    def scan_downloads(self) -> List[MediaFile]:
+        """
+        Scan the downloads directory for media files at parent level only.
+        
+        Returns:
+            List of MediaFile objects found (only top-level items)
+        """
+        media_files = []
+        
+        if not self.downloads_dir.exists():
+            print(f"⚠️  Downloads directory not found: {self.downloads_dir}")
+            return media_files
+        
+        print(f"🔍 Scanning downloads directory (parent level only): {self.downloads_dir}")
+        
+        # Only scan direct children, not subdirectories
+        for item_path in self.downloads_dir.iterdir():
+            if item_path.is_file() and self._is_media_file(item_path):
+                try:
+                    size = item_path.stat().st_size
+                    media_file = MediaFile(path=item_path, size=size)
+                    media_files.append(media_file)
+                    print(f"    📄 Found file: {item_path.name}")
+                except (OSError, PermissionError):
+                    continue
+            elif item_path.is_dir():
+                # For directories, classify by directory name, not contents
+                try:
+                    # Calculate directory size (for reporting)
+                    total_size = sum(f.stat().st_size for f in item_path.rglob('*') if f.is_file())
+                    media_file = MediaFile(path=item_path, size=total_size)
+                    media_files.append(media_file)
+                    print(f"    📁 Found directory: {item_path.name}")
+                except (OSError, PermissionError):
+                    continue
+        
+        print(f"📁 Found {len(media_files)} items (files and directories) at parent level")
+        return media_files
+    
+    def _is_media_file(self, file_path: Path) -> bool:
+        """Check if a file is a media file based on extension."""
+        return file_path.suffix.lower() in config.video_extensions_set
+    
+    def classify_files(self, media_files: List[MediaFile]) -> List[MediaFile]:
+        """
+        Classify media files using cached, rule-based, and AI classification.
+        
+        Args:
+            media_files: List of MediaFile objects to classify
+            
+        Returns:
+            List of MediaFile objects with classification
+        """
+        classified_files = []
+        
+        # Load classification cache
+        cache = self.load_classification_cache()
+        
+        # Separate files into database-cached, csv-cached, obvious, and AI-needed
+        db_cached_files = []
+        csv_cached_files = []
+        obvious_files = []
+        ai_needed_files = []
+        
+        print(f"🔍 Pre-filtering {len(media_files)} files...")
+        
+        for media_file in media_files:
+            filename = media_file.path.name
+            filename_lower = filename.lower()
+            
+            # Check database first (highest priority)
+            db_result = self.db.get_classification(filename)
+            if db_result:
+                media_type_str, classification_source, confidence = db_result
+                try:
+                    media_type = MediaType(media_type_str)
+                    db_cached_files.append((media_file, media_type, f"DB-{classification_source}"))
+                    continue
+                except ValueError:
+                    # Invalid cached media type, re-classify
+                    pass
+            
+            # Check CSV cache second
+            if filename in cache:
+                media_type_str, classification_source = cache[filename]
+                try:
+                    media_type = MediaType(media_type_str)
+                    csv_cached_files.append((media_file, media_type, f"CSV-{classification_source}"))
+                    # Also store in database for future use
+                    self.db.store_classification(filename, media_type_str, classification_source, 0.7)
+                    continue
+                except ValueError:
+                    # Invalid cached media type, re-classify
+                    pass
+            
+            # Very obvious TV patterns - no AI needed
+            if any(pattern in filename_lower for pattern in ['s0', 's1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9', 'season', 'episode']):
+                obvious_files.append((media_file, MediaType.TV, "Rule-based"))
+            # Very obvious documentary patterns
+            elif any(pattern in filename_lower for pattern in ['documentary', 'docu', 'bbc', 'nat geo', 'national geographic']):
+                obvious_files.append((media_file, MediaType.DOCUMENTARY, "Rule-based"))
+            # Very obvious standup patterns
+            elif any(pattern in filename_lower for pattern in ['standup', 'stand-up', 'comedy special', 'chappelle', 'carlin']):
+                obvious_files.append((media_file, MediaType.STANDUP, "Rule-based"))
+            else:
+                ai_needed_files.append(media_file)
+        
+        print(f"🗄️  {len(db_cached_files)} files loaded from database")
+        print(f"💾 {len(csv_cached_files)} files loaded from CSV cache")
+        print(f"📋 {len(obvious_files)} files pre-classified by rules")
+        print(f"🤖 {len(ai_needed_files)} files need AI classification")
+        
+        # Process database cached files
+        for media_file, media_type, source in db_cached_files:
+            target_dirs = config.get_directories_by_media_type(media_type.value)
+            target_directory = target_dirs[0] if target_dirs else None
+            
+            classified_file = media_file._replace(
+                media_type=media_type,
+                target_directory=target_directory,
+                classification_source=source
+            )
+            classified_files.append(classified_file)
+        
+        # Process CSV cached files
+        for media_file, media_type, source in csv_cached_files:
+            target_dirs = config.get_directories_by_media_type(media_type.value)
+            target_directory = target_dirs[0] if target_dirs else None
+            
+            classified_file = media_file._replace(
+                media_type=media_type,
+                target_directory=target_directory,
+                classification_source=source
+            )
+            classified_files.append(classified_file)
+        
+        # Process obvious files and store in database
+        rule_based_entries = []
+        for media_file, media_type, source in obvious_files:
+            # For TV shows, try to find existing show location
+            target_directory = None
+            show_name = None
+            season = None
+            episode = None
+            
+            if media_type == MediaType.TV:
+                # Extract TV show information
+                show_name, season, episode = self.media_db.extract_tv_info(media_file.path.name)
+                if show_name:
+                    # Try to find existing show location
+                    existing_location = self.media_db.find_tv_show_location(show_name)
+                    if existing_location:
+                        target_directory = existing_location
+                        print(f"    📺 Found existing location for '{show_name}': {existing_location}")
+                    else:
+                        print(f"    📺 New show '{show_name}' - will use default TV directory")
+            
+            # Fall back to default directories if no specific location found
+            if not target_directory:
+                target_dirs = config.get_directories_by_media_type(media_type.value)
+                target_directory = target_dirs[0] if target_dirs else None
+            
+            classified_file = media_file._replace(
+                media_type=media_type,
+                target_directory=target_directory,
+                classification_source=source,
+                show_name=show_name,
+                season=season,
+                episode=episode
+            )
+            classified_files.append(classified_file)
+            
+            # Prepare for database storage
+            rule_based_entries.append((
+                media_file.path.name,
+                media_type.value,
+                source,
+                0.8  # High confidence for rule-based obvious patterns
+            ))
+        
+        # Store rule-based classifications in database
+        if rule_based_entries:
+            self.db.store_batch_classifications(rule_based_entries)
+        
+        # Process AI-needed files
+        if ai_needed_files:
+            if self.use_ai and self.classifier:
+                print(f"🤖 Starting batch AI classification for {len(ai_needed_files)} files...")
+                
+                # Process files in batches of 10
+                batch_size = 10
+                for batch_start in range(0, len(ai_needed_files), batch_size):
+                    batch_end = min(batch_start + batch_size, len(ai_needed_files))
+                    batch_files = ai_needed_files[batch_start:batch_end]
+                    batch_filenames = [f.path.name for f in batch_files]
+                    
+                    batch_num = (batch_start // batch_size) + 1
+                    total_batches = (len(ai_needed_files) + batch_size - 1) // batch_size
+                    
+                    print(f"📦 Batch {batch_num}/{total_batches}: Classifying {len(batch_files)} files...")
+                    
+                    # Classify the batch
+                    batch_results = self.classifier.classify_batch(batch_filenames)
+                    
+                    # Process batch results and store in database
+                    batch_db_entries = []
+                    for media_file, result in zip(batch_files, batch_results):
+                        # For TV shows, try to find existing show location
+                        target_directory = None
+                        show_name = None
+                        season = None
+                        episode = None
+                        
+                        if result.media_type == MediaType.TV:
+                            # Extract TV show information
+                            show_name, season, episode = self.media_db.extract_tv_info(media_file.path.name)
+                            if show_name:
+                                # Try to find existing show location
+                                existing_location = self.media_db.find_tv_show_location(show_name)
+                                if existing_location:
+                                    target_directory = existing_location
+                                    print(f"        📺 Found existing location for '{show_name}': {existing_location}")
+                                else:
+                                    print(f"        📺 New show '{show_name}' - will use default TV directory")
+                        
+                        # Fall back to default directories if no specific location found
+                        if not target_directory:
+                            target_dirs = config.get_directories_by_media_type(result.media_type.value)
+                            target_directory = target_dirs[0] if target_dirs else None
+                        
+                        # Determine classification source
+                        classification_source = "AI-Batch" if self.classifier.client else "Rule-based"
+                        
+                        # Update the media file with classification
+                        classified_file = media_file._replace(
+                            media_type=result.media_type,
+                            target_directory=target_directory,
+                            classification_source=classification_source,
+                            show_name=show_name,
+                            season=season,
+                            episode=episode
+                        )
+                        classified_files.append(classified_file)
+                        
+                        # Prepare for database storage
+                        batch_db_entries.append((
+                            media_file.path.name,
+                            result.media_type.value,
+                            classification_source,
+                            result.confidence
+                        ))
+                        
+                        show_info = f" ({show_name})" if show_name else ""
+                        print(f"    {media_file.path.name} → {result.media_type.value}{show_info} ({classification_source})")
+                    
+                    # Store batch results in database
+                    if batch_db_entries:
+                        self.db.store_batch_classifications(batch_db_entries)
+                    
+                    # Delay between batches with jitter
+                    if batch_num < total_batches:  # Don't delay after last batch
+                        delay = 2.0 + random.uniform(0, 1)
+                        print(f"⏳ Waiting {delay:.1f}s before next batch...")
+                        time.sleep(delay)
+            else:
+                # Fallback to rule-based classification for all AI-needed files
+                print(f"📋 Using rule-based classification for {len(ai_needed_files)} remaining files...")
+                
+                for media_file in ai_needed_files:
+                    # Use fallback classification (assumes movies by default)
+                    media_type = MediaType.MOVIE
+                    classification_source = "Rule-based"
+                    
+                    # Get target directories for this media type
+                    target_dirs = config.get_directories_by_media_type(media_type.value)
+                    target_directory = target_dirs[0] if target_dirs else None
+                    
+                    # Update the media file with classification
+                    classified_file = media_file._replace(
+                        media_type=media_type,
+                        target_directory=target_directory,
+                        classification_source=classification_source
+                    )
+                    classified_files.append(classified_file)
+        
+        # Save all new classifications to cache
+        new_classifications = [f for f in classified_files if not f.classification_source.startswith("Cached-")]
+        if new_classifications:
+            self.save_classification_cache(classified_files)
+        
+        return classified_files
+    
+    def organize_files(self, classified_files: List[MediaFile]) -> List[MoveResult]:
+        """
+        Organize classified files into appropriate directories.
+        
+        Args:
+            classified_files: List of classified MediaFile objects
+            
+        Returns:
+            List of MoveResult objects
+        """
+        results = []
+        
+        # Group files by media type
+        files_by_type = {}
+        for media_file in classified_files:
+            if media_file.media_type not in files_by_type:
+                files_by_type[media_file.media_type] = []
+            files_by_type[media_file.media_type].append(media_file)
+        
+        print(f"📦 Organizing {len(classified_files)} files...")
+        
+        for media_type, files in files_by_type.items():
+            print(f"\n📂 Processing {len(files)} {media_type.value} items:")
+            
+            if media_type == MediaType.OTHER or media_type == MediaType.AUDIOBOOK:
+                print(f"    ⏭️  Skipping {media_type.value} items (unclassified - will not be moved)")
+                # Add failed results for unclassified items
+                for media_file in files:
+                    results.append(MoveResult(
+                        success=False,
+                        source_path=media_file.path,
+                        error=f"Skipped - classified as {media_type.value}"
+                    ))
+                continue
+            
+            for media_file in files:
+                result = self._move_file(media_file)
+                results.append(result)
+        
+        return results
+    
+    def _move_file(self, media_file: MediaFile) -> MoveResult:
+        """
+        Move a single file to its target directory with intelligent placement.
+        
+        Args:
+            media_file: MediaFile to move
+            
+        Returns:
+            MoveResult indicating success/failure
+        """
+        if not media_file.target_directory:
+            return MoveResult(
+                success=False,
+                source_path=media_file.path,
+                error="No target directory configured"
+            )
+        
+        # If we have a specific target directory (from existing show location), try it first
+        if media_file.target_directory:
+            result = self._try_move_to_directory(media_file, Path(media_file.target_directory))
+            if result.success:
+                return result
+            elif "access" in result.error.lower() or "permission" in result.error.lower():
+                # Mark this directory as failed and don't try it again for other files
+                self.media_db.mark_directory_failed(media_file.target_directory)
+        
+        # For TV shows, try to create a new show directory in available TV directories
+        if media_file.media_type == MediaType.TV and media_file.show_name:
+            return self._create_tv_show_directory(media_file)
+        
+        # For movies or other media, try all available directories
+        target_dirs = config.get_directories_by_media_type(media_file.media_type.value)
+        
+        for target_dir in target_dirs:
+            # Skip directories we've already marked as failed for this move attempt
+            if target_dir in self.media_db.failed_directories:
+                print(f"    ⏭️  Skipping previously failed directory: {target_dir}")
+                continue
+                
+            result = self._try_move_to_directory(media_file, Path(target_dir))
+            if result.success:
+                return result
+            elif "access" in result.error.lower() or "permission" in result.error.lower():
+                # Mark this directory as failed
+                self.media_db.mark_directory_failed(target_dir)
+        
+        # If we get here, all target directories failed
+        return MoveResult(
+            success=False,
+            source_path=media_file.path,
+            error="All target directories failed (space or access issues)"
+        )
+    
+    def _try_move_to_directory(self, media_file: MediaFile, target_path: Path) -> MoveResult:
+        """
+        Try to move a file to a specific directory.
+        
+        Args:
+            media_file: MediaFile to move
+            target_path: Target directory path
+            
+        Returns:
+            MoveResult indicating success/failure
+        """
+        # Check if target directory exists and is accessible
+        if not target_path.exists():
+            if not self.dry_run:
+                try:
+                    target_path.mkdir(parents=True, exist_ok=True)
+                    print(f"    📁 Created directory: {target_path}")
+                except OSError as e:
+                    return MoveResult(
+                        success=False,
+                        source_path=media_file.path,
+                        error=f"Failed to create directory {target_path}: {e}"
+                    )
+        elif not target_path.is_dir():
+            return MoveResult(
+                success=False,
+                source_path=media_file.path,
+                error=f"Target path exists but is not a directory: {target_path}"
+            )
+        elif not os.access(target_path, os.W_OK):
+            return MoveResult(
+                success=False,
+                source_path=media_file.path,
+                error=f"No write permission for directory: {target_path}"
+            )
+        
+        # Check available space
+        if not self._check_space(media_file.size, target_path):
+            return MoveResult(
+                success=False,
+                source_path=media_file.path,
+                error=f"Insufficient space in {target_path}"
+            )
+        
+        # Determine final target path
+        final_target = target_path / media_file.path.name
+        
+        # Handle filename conflicts
+        if final_target.exists():
+            final_target = self._resolve_filename_conflict(final_target)
+        
+        # Perform the move
+        if self.dry_run:
+            item_type = "directory" if media_file.path.is_dir() else "file"
+            print(f"    📋 DRY RUN: Would move {item_type} to {final_target}")
+            return MoveResult(
+                success=True,
+                source_path=media_file.path,
+                target_path=final_target
+            )
+        else:
+            try:
+                if media_file.path.is_dir():
+                    # Move entire directory
+                    shutil.move(str(media_file.path), str(final_target))
+                    print(f"    ✅ Moved directory to {final_target}")
+                else:
+                    # Move single file
+                    shutil.move(str(media_file.path), str(final_target))
+                    print(f"    ✅ Moved file to {final_target}")
+                
+                return MoveResult(
+                    success=True,
+                    source_path=media_file.path,
+                    target_path=final_target,
+                    space_freed=media_file.size
+                )
+            except Exception as e:
+                return MoveResult(
+                    success=False,
+                    source_path=media_file.path,
+                    error=f"Failed to move: {e}"
+                )
+    
+    def _create_tv_show_directory(self, media_file: MediaFile) -> MoveResult:
+        """
+        Create a new TV show directory and move the episode there.
+        
+        Args:
+            media_file: TV episode to move
+            
+        Returns:
+            MoveResult indicating success/failure
+        """
+        tv_dirs = config.get_directories_by_media_type("TV")
+        
+        for tv_base_dir in tv_dirs:
+            # Skip directories we've already marked as failed
+            if tv_base_dir in self.media_db.failed_directories:
+                print(f"    ⏭️  Skipping previously failed TV directory: {tv_base_dir}")
+                continue
+            
+            tv_base_path = Path(tv_base_dir)
+            
+            # Check if base TV directory is accessible
+            if not tv_base_path.exists() or not tv_base_path.is_dir() or not os.access(tv_base_path, os.W_OK):
+                print(f"    ❌ TV directory not accessible: {tv_base_path}")
+                self.media_db.mark_directory_failed(tv_base_dir)
+                continue
+            
+            # Check available space in base directory
+            if not self._check_space(media_file.size, tv_base_path):
+                print(f"    ⚠️  Insufficient space in TV directory: {tv_base_path}")
+                continue
+            
+            # Create show directory
+            show_dir_name = self._sanitize_show_name(media_file.show_name)
+            show_path = tv_base_path / show_dir_name
+            
+            # Try to create and move to the show directory
+            if not self.dry_run:
+                try:
+                    show_path.mkdir(exist_ok=True)
+                    print(f"    📺 Created/found show directory: {show_path}")
+                except OSError as e:
+                    print(f"    ❌ Failed to create show directory {show_path}: {e}")
+                    continue
+            
+            # Try to move the episode to the show directory
+            result = self._try_move_to_directory(media_file, show_path)
+            if result.success:
+                if not self.dry_run:
+                    print(f"    🎬 Created new show directory and moved episode")
+                return result
+        
+        # If we get here, all TV directories failed
+        return MoveResult(
+            success=False,
+            source_path=media_file.path,
+            error="Failed to create show directory in any available TV directory"
+        )
+    
+    def _sanitize_show_name(self, show_name: str) -> str:
+        """
+        Sanitize show name for use as directory name.
+        
+        Args:
+            show_name: Raw show name
+            
+        Returns:
+            Sanitized directory name
+        """
+        # Remove/replace invalid characters for filesystem
+        sanitized = re.sub(r'[<>:"/\\|?*]', '', show_name)
+        sanitized = re.sub(r'\s+', ' ', sanitized)  # Normalize spaces
+        return sanitized.strip()
+    
+    def _check_space(self, file_size: int, target_path: Path) -> bool:
+        """
+        Check if there's enough space in the target directory.
+        
+        Args:
+            file_size: Size of file to move in bytes
+            target_path: Target directory path
+            
+        Returns:
+            True if there's enough space
+        """
+        try:
+            stat = shutil.disk_usage(target_path)
+            available_space = stat.free
+            
+            # Require at least 1GB buffer beyond file size
+            required_space = file_size + (1024 * 1024 * 1024)  # 1GB buffer
+            
+            return available_space >= required_space
+        except OSError:
+            return False
+    
+    def _resolve_filename_conflict(self, target_path: Path) -> Path:
+        """
+        Resolve filename conflicts by adding a number suffix.
+        
+        Args:
+            target_path: Original target path
+            
+        Returns:
+            New path with conflict resolved
+        """
+        base_name = target_path.stem
+        extension = target_path.suffix
+        parent = target_path.parent
+        
+        counter = 1
+        while True:
+            new_name = f"{base_name}_{counter}{extension}"
+            new_path = parent / new_name
+            if not new_path.exists():
+                return new_path
+            counter += 1
+    
+    def generate_report(self, results: List[MoveResult], classified_files: List[MediaFile] = None) -> str:
+        """
+        Generate a report of the organization results.
+        
+        Args:
+            results: List of MoveResult objects
+            
+        Returns:
+            Path to the generated report file
+        """
+        timestamp = datetime.now().strftime(config.timestamp_format)
+        report_path = config.get_reports_path() / f"auto_organizer_{timestamp}.txt"
+        
+        successful_moves = [r for r in results if r.success]
+        failed_moves = [r for r in results if not r.success]
+        total_space_freed = sum(r.space_freed for r in successful_moves)
+        
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write("🤖 AUTO-ORGANIZER REPORT\n")
+            f.write("=" * 60 + "\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Mode: {'DRY RUN' if self.dry_run else 'EXECUTION'}\n")
+            f.write(f"Total Files Processed: {len(results)}\n")
+            f.write(f"Successful Moves: {len(successful_moves)}\n")
+            f.write(f"Failed Moves: {len(failed_moves)}\n")
+            f.write(f"Total Space Freed: {self._format_size(total_space_freed)}\n\n")
+            
+            if successful_moves:
+                f.write("✅ SUCCESSFUL MOVES:\n")
+                f.write("-" * 40 + "\n")
+                for result in successful_moves:
+                    # Find classification info for this file
+                    classification_info = ""
+                    media_type = "UNKNOWN"
+                    if classified_files:
+                        for classified_file in classified_files:
+                            if str(classified_file.path) == str(result.source_path):
+                                media_type = classified_file.media_type.value if classified_file.media_type else "UNKNOWN"
+                                classification_info = f" ({classified_file.classification_source or 'Unknown'} Classification)"
+                                break
+                    
+                    # Get additional info for TV shows
+                    show_info = ""
+                    if classified_files:
+                        for classified_file in classified_files:
+                            if str(classified_file.path) == str(result.source_path):
+                                if classified_file.show_name:
+                                    season_episode = ""
+                                    if classified_file.season and classified_file.episode:
+                                        season_episode = f" S{classified_file.season:02d}E{classified_file.episode:02d}"
+                                    show_info = f" - {classified_file.show_name}{season_episode}"
+                                break
+                    
+                    f.write(f"  {result.source_path.name}\n")
+                    f.write(f"    FROM: {result.source_path}\n")
+                    f.write(f"    TO:   {result.target_path if result.target_path else 'N/A'}\n")
+                    f.write(f"    SIZE: {self._format_size(result.space_freed)}\n")
+                    f.write(f"    TYPE: {media_type}{show_info}{classification_info}\n\n")
+            
+            if failed_moves:
+                f.write("❌ FAILED MOVES:\n")
+                f.write("-" * 40 + "\n")
+                for result in failed_moves:
+                    # Find classification info for failed files too
+                    classification_info = ""
+                    media_type = "UNKNOWN"
+                    intended_target = "Unknown"
+                    if classified_files:
+                        for classified_file in classified_files:
+                            if str(classified_file.path) == str(result.source_path):
+                                media_type = classified_file.media_type.value if classified_file.media_type else "UNKNOWN"
+                                classification_info = f" ({classified_file.classification_source or 'Unknown'} Classification)"
+                                intended_target = classified_file.target_directory or "Unknown"
+                                break
+                    
+                    # Get additional info for TV shows  
+                    show_info = ""
+                    if classified_files:
+                        for classified_file in classified_files:
+                            if str(classified_file.path) == str(result.source_path):
+                                if classified_file.show_name:
+                                    season_episode = ""
+                                    if classified_file.season and classified_file.episode:
+                                        season_episode = f" S{classified_file.season:02d}E{classified_file.episode:02d}"
+                                    show_info = f" - {classified_file.show_name}{season_episode}"
+                                break
+                    
+                    f.write(f"  {result.source_path.name}\n")
+                    f.write(f"    FROM: {result.source_path}\n")
+                    f.write(f"    INTENDED TARGET: {intended_target}\n")
+                    f.write(f"    TYPE: {media_type}{show_info}{classification_info}\n")
+                    f.write(f"    ERROR: {result.error}\n\n")
+        
+        return str(report_path)
+    
+    def _format_size(self, size_bytes: int) -> str:
+        """Format file size in human-readable format."""
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.1f} PB"
+    
+    def run_full_organization(self) -> str:
+        """
+        Run the complete organization workflow.
+        
+        Returns:
+            Path to the generated report
+        """
+        print("🤖 MEDIA AUTO-ORGANIZER")
+        print("=" * 50)
+        print(f"Mode: {'DRY RUN' if self.dry_run else 'EXECUTION'}")
+        print(f"Downloads Directory: {self.downloads_dir}")
+        
+        try:
+            # Step 1: Scan for media files
+            media_files = self.scan_downloads()
+            if not media_files:
+                print("📭 No media files found in downloads directory")
+                return ""
+            
+            # Step 2: Classify files using AI
+            classified_files = self.classify_files(media_files)
+            
+            # Step 3: Organize files
+            results = self.organize_files(classified_files)
+            
+            # Step 4: Generate report
+            report_path = self.generate_report(results, classified_files)
+            print(f"\n📄 Report generated: {report_path}")
+            
+            # Step 5: Summary
+            successful = sum(1 for r in results if r.success)
+            failed = sum(1 for r in results if not r.success)
+            print(f"\n📊 SUMMARY:")
+            print(f"  Successful: {successful}")
+            print(f"  Failed: {failed}")
+            print(f"  Total: {len(results)}")
+            
+            if not self.dry_run and successful > 0:
+                print(f"🎉 Successfully organized {successful} media files!")
+            
+            return report_path
+            
+        except KeyboardInterrupt:
+            print("\n👋 Organization cancelled by user")
+            return ""
+        except Exception as e:
+            print(f"❌ Error during organization: {e}")
+            return ""
+
+
+def main() -> None:
+    """Main entry point for the auto-organizer."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description="Automatically organize downloaded media files using AI classification",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=f"""
+Downloads Directory: {config.downloads_directory}
+
+Target Directories:
+  Movies: {config.movie_directories}
+  TV Shows: {config.tv_directories}  
+  Documentaries: {config.documentary_directories}
+  Stand-ups: {config.standup_directories}
+
+Examples:
+  # Dry run (preview mode - default)
+  python -m file_managers.plex.utils.auto_organizer
+  
+  # Actually organize files
+  python -m file_managers.plex.utils.auto_organizer --execute
+  
+  # Verbose output
+  python -m file_managers.plex.utils.auto_organizer --verbose
+        """
+    )
+    
+    parser.add_argument(
+        "--execute",
+        action="store_true", 
+        help="Actually move files (default: dry run mode)"
+    )
+    
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose output"
+    )
+    
+    parser.add_argument(
+        "--no-ai",
+        action="store_true",
+        help="Disable AI classification, use rule-based only (avoids throttling)"
+    )
+    
+    parser.add_argument(
+        "--db-stats",
+        action="store_true",
+        help="Show classification database statistics and exit"
+    )
+    
+    args = parser.parse_args()
+    
+    try:
+        organizer = AutoOrganizer(dry_run=not args.execute, use_ai=not args.no_ai)
+        
+        # Show database stats and exit if requested
+        if args.db_stats:
+            stats = organizer.db.get_stats()
+            print("📊 CLASSIFICATION DATABASE STATISTICS")
+            print("=" * 50)
+            print(f"Total Classifications: {stats['total']}")
+            
+            if stats['by_type']:
+                print("\nBy Media Type:")
+                for media_type, count in stats['by_type'].items():
+                    print(f"  {media_type}: {count}")
+            
+            if stats['by_source']:
+                print("\nBy Classification Source:")
+                for source, count in stats['by_source'].items():
+                    print(f"  {source}: {count}")
+            
+            print(f"\nDatabase Location: {organizer.db.db_path}")
+            return
+        
+        # Verify mount access before proceeding
+        if not organizer.verify_mount_access():
+            print("\n🚫 Organization cancelled due to mount access issues")
+            return
+        
+        if args.execute:
+            print("\n⚠️  WARNING: Files will be moved to Plex directories!")
+            print("⚠️  Make sure you have backups before proceeding!")
+            confirm = input("\nType 'ORGANIZE' to proceed: ").strip()
+            if confirm != "ORGANIZE":
+                print("🚫 Organization cancelled")
+                return
+        
+        report_path = organizer.run_full_organization()
+        
+        if report_path:
+            print(f"\n📄 Detailed report saved to: {report_path}")
+        
+    except KeyboardInterrupt:
+        print("\n👋 Organization cancelled by user")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
+if __name__ == "__main__":
+    main()
