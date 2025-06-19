@@ -191,7 +191,13 @@ class MediaConfig:
     
     @property
     def bedrock_model_id(self) -> str:
-        """Get Bedrock model ID."""
+        """Get Bedrock model ID from environment variable or config file."""
+        # Check environment variable first
+        env_model_id = os.getenv('BEDROCK_MODEL_ID')
+        if env_model_id:
+            return env_model_id
+        
+        # Fallback to config file
         return self._config.get('bedrock', {}).get('model_id', 'anthropic.claude-3-haiku-20240307-v1:0')
     
     @property

@@ -16,7 +16,13 @@
       "Bash(mount)",
       "Bash(touch:*)",
       "Bash(cat:*)",
-      "Bash(mcp-server-github:*)"
+      "Bash(mcp-server-github:*)",
+      "Bash(python:*)",
+      "Bash(black:*)",
+      "Bash(ruff check:*)",
+      "Bash(mypy:*)",
+      "Bash(chmod:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   }
