@@ -1,6 +1,22 @@
 # File Managers
 
-A comprehensive Python package for managing Plex media libraries, providing tools for movie duplicate detection, TV show organization, and automated media management.
+A comprehensive Python package for managing Plex media libraries, featuring a **unified CLI interface** (`plex-cli`) that provides tools for movie duplicate detection, TV show organization, automated media management, and AI-powered media assistance.
+
+## 🎉 **NEW: Unified CLI Interface**
+
+**All functionality is now available through a single, powerful command: `plex-cli`**
+
+```bash
+# Quick start - Interactive mode
+plex-cli
+
+# Direct commands
+plex-cli movies duplicates
+plex-cli tv organize --demo
+plex-cli files organize --execute
+plex-cli media assistant "Do I have The Batman?"
+plex-cli config show
+```
 
 ## 🚀 Features
 
@@ -45,7 +61,94 @@ pip install -e .
 pip install -e ".[dev]"
 ```
 
-## 🛠️ Quick Start
+## 🚀 **Unified CLI Quick Start**
+
+### Installation and Setup
+```bash
+# Install the package
+pip install -e .
+
+# Set up the plex-cli alias (recommended)
+echo 'plex-cli() {
+    if [ $# -eq 0 ]; then
+        python3 -m file_managers.cli.personal_cli --interactive
+    else
+        python3 -m file_managers.cli.personal_cli "$@"
+    fi
+}' >> ~/.bashrc
+source ~/.bashrc
+```
+
+### Using the Unified CLI
+
+#### **Interactive Mode (Recommended for Beginners)**
+```bash
+# Start the interactive menu system
+plex-cli
+
+# Navigate through organized menus:
+# 1. Files - Duplicates, database, auto-organize
+# 2. Movies - Duplicates, search, reports  
+# 3. TV - Organize, search, missing episodes, reports
+# 4. Media - AI assistant, database, status
+# 5. Config - Show settings, paths, API management
+```
+
+#### **Direct Commands (Power Users)**
+
+**File Operations:**
+```bash
+plex-cli files duplicates --type movies     # Find movie duplicates
+plex-cli files database --rebuild           # Rebuild media database
+plex-cli files organize                     # Auto-organize downloads (dry-run)
+plex-cli files organize --execute           # Actually organize files
+plex-cli files organize --no-ai             # Rule-based classification only
+```
+
+**Movie Management:**
+```bash
+plex-cli movies duplicates                  # Find duplicate movies
+plex-cli movies duplicates --delete         # Interactive deletion mode
+plex-cli movies search "The Batman"         # Search movie collection
+plex-cli movies reports                     # Generate comprehensive reports
+```
+
+**TV Show Management:**
+```bash
+plex-cli tv organize                        # Analyze TV episode organization
+plex-cli tv organize --demo                 # Preview what would be moved
+plex-cli tv organize --execute              # Actually move files
+plex-cli tv search "Breaking Bad"           # Search TV shows
+plex-cli tv missing "Game of Thrones"       # Find missing episodes
+plex-cli tv reports                         # Generate TV reports
+```
+
+**Cross-Media Operations:**
+```bash
+plex-cli media assistant "Do I have Inception?"     # AI-powered search
+plex-cli media assistant --interactive              # Interactive AI mode
+plex-cli media database --rebuild                   # Database management
+plex-cli media status                               # System status check
+```
+
+**Configuration Management:**
+```bash
+plex-cli config show                        # View all configuration
+plex-cli config paths                       # Show directory paths
+plex-cli config apis                        # API configuration help
+plex-cli config apis --check                # Test API connectivity
+```
+
+### Help System
+```bash
+plex-cli --help                            # Main help
+plex-cli movies --help                     # Movie commands help
+plex-cli tv organize --help                # Specific command help
+```
+
+---
+
+## 🛠️ **Legacy CLI Commands** (Still Available)
 
 ### Movie Duplicate Detection and Reports
 

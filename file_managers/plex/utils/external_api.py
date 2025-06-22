@@ -86,6 +86,8 @@ class ExternalAPIClient:
         self.tvdb_base_url = self.tvdb_config.get('base_url', 'https://api4.thetvdb.com/v4')
         self.tvdb_delay = self.tvdb_config.get('rate_limit_delay', 1.0)
         self.tvdb_timeout = self.tvdb_config.get('timeout', 10)
+        self.tvdb_jwt_token = None
+        self.tvdb_token_expiry = 0
         
         logger.info(f"TMDB API available: {bool(self.tmdb_api_key)}")
         logger.info(f"TVDB API available: {bool(self.tvdb_api_key)}")
@@ -237,9 +239,48 @@ class ExternalAPIClient:
         
         return results
     
+    def _get_tvdb_jwt_token(self) -> Optional[str]:
+        """Get JWT token for TVDB API authentication."""
+        if not self.tvdb_api_key:
+            return None
+            
+        # Check if we have a valid token
+        current_time = time.time()
+        if self.tvdb_jwt_token and current_time < self.tvdb_token_expiry:
+            return self.tvdb_jwt_token
+        
+        # Get new token
+        url = f"{self.tvdb_base_url}/login"
+        data = {
+            'apikey': self.tvdb_api_key
+        }
+        
+        try:
+            response = requests.post(url, json=data, timeout=self.tvdb_timeout)
+            time.sleep(self.tvdb_delay)
+            
+            if response.status_code == 200:
+                result = response.json()
+                self.tvdb_jwt_token = result.get('data', {}).get('token')
+                # TVDB tokens expire after 1 hour, set expiry for 50 minutes to be safe
+                self.tvdb_token_expiry = current_time + (50 * 60)
+                return self.tvdb_jwt_token
+            else:
+                logger.error(f"TVDB login failed: {response.status_code} - {response.text}")
+                if response.status_code == 401:
+                    logger.error("TVDB authentication failed - check if your TVDB_API_KEY is valid")
+                return None
+        except Exception as e:
+            logger.error(f"TVDB login error: {e}")
+            return None
+
     def _search_tvdb_tv(self, title: str, year: Optional[int] = None) -> List[APIMediaResult]:
         """Search TVDB for TV shows."""
-        # TVDB v4 API requires authentication, implementing basic search
+        # Get JWT token for authentication
+        jwt_token = self._get_tvdb_jwt_token()
+        if not jwt_token:
+            raise Exception("TVDB API error: Failed to authenticate")
+        
         url = f"{self.tvdb_base_url}/search"
         params = {
             'query': title,
@@ -247,7 +288,7 @@ class ExternalAPIClient:
         }
         
         headers = {
-            'Authorization': f'Bearer {self.tvdb_api_key}',
+            'Authorization': f'Bearer {jwt_token}',
             'Content-Type': 'application/json'
         }
         
@@ -323,10 +364,16 @@ class ExternalAPIClient:
     
     def _get_tvdb_tv_details(self, show_id: int) -> Optional[APIShowDetails]:
         """Get detailed TV show information from TVDB."""
+        # Get JWT token for authentication
+        jwt_token = self._get_tvdb_jwt_token()
+        if not jwt_token:
+            logger.error("Failed to get TVDB JWT token for details request")
+            return None
+        
         url = f"{self.tvdb_base_url}/series/{show_id}/extended"
         
         headers = {
-            'Authorization': f'Bearer {self.tvdb_api_key}',
+            'Authorization': f'Bearer {jwt_token}',
             'Content-Type': 'application/json'
         }
         
@@ -334,6 +381,7 @@ class ExternalAPIClient:
         time.sleep(self.tvdb_delay)
         
         if response.status_code != 200:
+            logger.error(f"TVDB series details failed: {response.status_code}")
             return None
         
         data = response.json().get('data', {})

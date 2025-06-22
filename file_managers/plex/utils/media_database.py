@@ -444,3 +444,30 @@ class MediaDatabase:
             return min(0.9, intersection / len(words2))
         
         return intersection / union if union > 0 else 0.0
+    
+    def get_all_movies(self) -> List[MovieEntry]:
+        """
+        Get all movies as MovieEntry objects.
+        
+        Returns:
+            List of MovieEntry objects
+        """
+        movies = []
+        for movie_data in self.data["movies"].values():
+            movie = MovieEntry(**movie_data)
+            movies.append(movie)
+        return movies
+    
+    def get_all_tv_episodes(self) -> List[TVEpisodeEntry]:
+        """
+        Get all TV episodes as TVEpisodeEntry objects.
+        
+        Returns:
+            List of TVEpisodeEntry objects
+        """
+        episodes = []
+        for show_data in self.data["tv_shows"].values():
+            for episode_data in show_data["episodes"]:
+                episode = TVEpisodeEntry(**episode_data)
+                episodes.append(episode)
+        return episodes

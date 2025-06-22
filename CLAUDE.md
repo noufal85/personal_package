@@ -30,9 +30,50 @@ Personal packages repository containing utility scripts and tools. Currently inc
 
 ### Package Usage
 
-#### General File Management
-- `python -m file_managers.cli.file_manager find <directory> <extension>` - Find files by extension
-- `python -m file_managers.cli.file_manager size <file>` - Get file size
+#### Unified CLI (Recommended - Phase 3 Complete!)
+**Main Entry Point:** `plex-cli` (alias for `python3 -m file_managers.cli.personal_cli`)
+
+**General File Operations:**
+- `plex-cli files duplicates --type movies` - Find movie duplicates
+- `plex-cli files database --rebuild` - Rebuild media database
+- `plex-cli files organize` - Auto-organize downloads (dry-run mode)
+- `plex-cli files organize --execute` - Actually organize files
+- `plex-cli files organize --no-ai` - Rule-based classification only
+
+**Movie Management:**
+- `plex-cli movies duplicates` - Find duplicate movies
+- `plex-cli movies duplicates --delete` - Interactive deletion mode
+- `plex-cli movies search "The Batman"` - Search movie collection
+- `plex-cli movies reports` - Generate comprehensive movie collection reports
+
+**TV Show Management:**
+- `plex-cli tv organize` - Analyze TV episode organization
+- `plex-cli tv organize --demo` - Preview what would be moved
+- `plex-cli tv organize --execute` - Actually move files (with confirmation)
+- `plex-cli tv search "Breaking Bad"` - Search TV shows
+- `plex-cli tv missing "Game of Thrones"` - Find missing episodes
+- `plex-cli tv missing "Lost" --season 3` - Check specific season
+- `plex-cli tv reports` - Generate comprehensive TV collection reports
+
+**Cross-Media Operations:**
+- `plex-cli media assistant "Do I have Inception?"` - AI-powered natural language search
+- `plex-cli media assistant --interactive` - Interactive AI assistant mode
+- `plex-cli media database --rebuild` - Rebuild media database
+- `plex-cli media database --status` - Show database status
+- `plex-cli media status` - System status and mount point verification
+
+**Configuration:**
+- `plex-cli config show` - Show all configuration
+- `plex-cli config show --section movies` - Show movie configuration only
+- `plex-cli config paths` - Show configured directory paths
+- `plex-cli config apis` - API configuration management
+- `plex-cli config apis --show` - Show configured API keys (masked)
+- `plex-cli config apis --check` - Test API connectivity
+
+**Interactive Mode:**
+- `plex-cli` or `plex-cli --interactive` - Start interactive menu mode
+
+#### Legacy CLI Commands (Still Available)
 
 #### Plex Movie Management
 
@@ -94,6 +135,12 @@ Personal packages repository containing utility scripts and tools. Currently inc
   AWS_ACCESS_KEY_ID=your_aws_key_here
   AWS_SECRET_ACCESS_KEY=your_aws_secret_here
   ```
+
+**API Integration Notes:**
+- TVDB v4 API uses JWT authentication (automatically handled)
+- TMDB API uses direct API key authentication
+- Both APIs have rate limiting built-in to prevent errors
+- Use `plex-cli config apis --check` to test API connectivity
 
 **AI-Powered Media Search Features:**
 - Natural language query processing using AWS Bedrock (Claude) or pattern matching fallback

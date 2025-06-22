@@ -22,7 +22,9 @@
       "Bash(ruff check:*)",
       "Bash(mypy:*)",
       "Bash(chmod:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(source ~/.bashrc)",
+      "Bash(alias plex-cli)"
     ],
     "deny": []
   }
