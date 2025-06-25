@@ -47,9 +47,180 @@ class TVMoveAnalysis(NamedTuple):
     total_size: int
 
 
+def _enhanced_normalize_show_name(show_name: str) -> str:
+    """
+    Enhanced show name normalization for better matching.
+    
+    Handles cases like:
+    - "Mobland" vs "MobLand" 
+    - "Breaking Bad" vs "Breaking.Bad"
+    - "Game of Thrones" vs "Game Of Thrones"
+    """
+    # Remove common separators and convert to lowercase for comparison
+    normalized = show_name.lower()
+    normalized = normalized.replace('.', '').replace('_', '').replace('-', '')
+    normalized = normalized.replace('  ', ' ').replace('  ', ' ')  # Multiple spaces to single
+    normalized = normalized.strip()
+    
+    # Remove years in parentheses for matching
+    import re
+    normalized = re.sub(r'\s*\(\d{4}\)', '', normalized)
+    
+    # Remove common quality indicators that might be in folder names
+    quality_indicators = ['1080p', '720p', '4k', 'hdtv', 'webrip', 'bluray', 'x264', 'x265', 'hevc']
+    for indicator in quality_indicators:
+        normalized = normalized.replace(indicator.lower(), '')
+    
+    # Clean up multiple spaces again
+    normalized = ' '.join(normalized.split())
+    
+    return normalized
+
+
+def _find_best_matching_show_folder(episode_show_name: str, existing_folders: Dict[str, Path]) -> Optional[Path]:
+    """
+    Find the best matching existing show folder using fuzzy matching.
+    
+    Args:
+        episode_show_name: Show name extracted from episode filename
+        existing_folders: Dictionary of existing show folders
+        
+    Returns:
+        Path to best matching folder, or None if no good match found
+    """
+    episode_normalized = _enhanced_normalize_show_name(episode_show_name)
+    
+    # First try exact match
+    for folder_key, folder_path in existing_folders.items():
+        if _enhanced_normalize_show_name(folder_key) == episode_normalized:
+            return folder_path
+    
+    # Then try fuzzy matching - look for folder names that contain the episode show name
+    # or vice versa (handles "Mobland" folder matching "MobLand S01E01" episode)
+    best_match = None
+    best_score = 0
+    
+    for folder_key, folder_path in existing_folders.items():
+        folder_normalized = _enhanced_normalize_show_name(folder_key)
+        
+        # Calculate similarity score
+        score = 0
+        
+        # Special handling for case variations like "MobLand" vs "Mobland"
+        # Check if they're the same after removing case and special chars
+        episode_clean = episode_normalized.replace(' ', '').lower()
+        folder_clean = folder_normalized.replace(' ', '').lower()
+        
+        # Check if this folder name looks like an individual episode folder
+        # (contains season/episode patterns like "s01e01", "season 1", etc.)
+        import re
+        is_episode_folder = bool(re.search(r's\d+e\d+|season\s+\d+|s\d+\s|e\d+\s', folder_path.name.lower()))
+        
+        if episode_clean == folder_clean:
+            if is_episode_folder:
+                score = 0.70  # Lower score for individual episode folders
+            else:
+                score = 0.95  # Very high score for case-only differences in main folders
+        elif episode_clean in folder_clean:
+            # Check if the episode name is contained in the folder name
+            # This handles "mobland" episode matching "mobland season 1" folder
+            if is_episode_folder:
+                score = 0.65  # Lower score for episode folders
+            else:
+                score = 0.9
+        elif folder_clean in episode_clean:
+            # Check if folder name is contained in episode name
+            # This handles "mobland" folder matching "mobland s01e01" episode
+            if is_episode_folder:
+                score = 0.60  # Lower score for episode folders
+            else:
+                score = 0.85
+        
+        # Check if one is contained in the other (original logic)
+        if episode_normalized in folder_normalized or folder_normalized in episode_normalized:
+            # Prefer shorter names (more general folders over specific episode files)
+            if len(folder_normalized) <= len(episode_normalized):
+                score = max(score, 0.8)  # High score for folder containing episode name
+            else:
+                score = max(score, 0.7)  # Lower score for episode name containing folder name
+        
+        # Check for word-by-word matching
+        episode_words = set(episode_normalized.split())
+        folder_words = set(folder_normalized.split())
+        
+        if episode_words and folder_words:
+            # Jaccard similarity (intersection over union)
+            intersection = len(episode_words & folder_words)
+            union = len(episode_words | folder_words)
+            word_similarity = intersection / union if union > 0 else 0
+            
+            if word_similarity > 0.6:  # At least 60% word overlap
+                score = max(score, word_similarity * 0.75)
+        
+        # Update best match if this is better
+        if score > best_score and score >= 0.6:  # Minimum 60% confidence
+            best_score = score
+            best_match = folder_path
+        elif score == best_score and score >= 0.6:
+            # If scores are equal, prefer shorter folder names (more general)
+            # This helps "Mobland" beat "MobLand S01E01" as a target
+            if best_match and len(folder_path.name) < len(best_match.name):
+                best_match = folder_path
+    
+    return best_match
+
+
+def _handle_duplicate_episodes(moves: List[EpisodeMove]) -> List[EpisodeMove]:
+    """
+    Handle duplicate episodes by keeping the largest file.
+    
+    Args:
+        moves: List of planned episode moves
+        
+    Returns:
+        Filtered list with duplicates resolved (keeping largest file)
+    """
+    # Group by target path (same show, season, episode)
+    from collections import defaultdict
+    episode_groups = defaultdict(list)
+    
+    for move in moves:
+        # Group by show, season, episode
+        key = (move.show_name.lower(), move.season, move.episode)
+        episode_groups[key].append(move)
+    
+    # Keep only the largest file for each episode
+    filtered_moves = []
+    duplicates_removed = []
+    
+    for episode_key, episode_moves in episode_groups.items():
+        if len(episode_moves) == 1:
+            # No duplicates
+            filtered_moves.append(episode_moves[0])
+        else:
+            # Multiple files for same episode - keep largest
+            largest_move = max(episode_moves, key=lambda m: m.size)
+            filtered_moves.append(largest_move)
+            
+            # Track removed duplicates for logging
+            for move in episode_moves:
+                if move != largest_move:
+                    duplicates_removed.append((move, largest_move))
+    
+    # Log duplicate removals
+    if duplicates_removed:
+        import logging
+        logger = logging.getLogger("tv_organization")
+        logger.info(f"Removed {len(duplicates_removed)} duplicate episodes (keeping largest files)")
+        for removed, kept in duplicates_removed:
+            logger.info(f"Duplicate: Removed {removed.source_path} ({format_file_size(removed.size)}) - Kept {kept.source_path} ({format_file_size(kept.size)})")
+    
+    return filtered_moves
+
+
 def find_existing_show_folders(directory: str) -> Dict[str, Path]:
     """
-    Find existing TV show folders in a directory.
+    Find existing TV show folders in a directory with enhanced matching.
     
     Args:
         directory: Path to TV directory to scan
@@ -66,9 +237,24 @@ def find_existing_show_folders(directory: str) -> Dict[str, Path]:
     try:
         for item in directory_path.iterdir():
             if item.is_dir():
-                # Normalize the folder name to match against episode show names
-                normalized_name = normalize_show_name(item.name)
+                # Use enhanced normalization for better matching
+                normalized_name = _enhanced_normalize_show_name(item.name)
+                
+                # Store multiple variations to catch different naming patterns
                 show_folders[normalized_name] = item
+                
+                # Also store case variations for better matching
+                case_variants = [
+                    item.name.lower(),
+                    item.name.upper(), 
+                    item.name.title(),
+                    normalized_name.lower()
+                ]
+                
+                for variant in case_variants:
+                    if variant not in show_folders:
+                        show_folders[variant] = item
+                        
     except PermissionError:
         pass
     
@@ -224,8 +410,6 @@ def analyze_tv_moves(directories: List[str], find_small_folders_flag: bool = Fal
         loose_episodes = find_loose_episodes(directory)
         
         for episode_path, show_name, season, episode in loose_episodes:
-            normalized_show = normalize_show_name(show_name)
-            
             try:
                 file_size = episode_path.stat().st_size
             except OSError:
@@ -234,30 +418,39 @@ def analyze_tv_moves(directories: List[str], find_small_folders_flag: bool = Fal
             total_episodes += 1
             total_size += file_size
             
-            # Determine target path
-            if normalized_show in existing_folders:
-                # Move to existing show folder
-                target_folder = existing_folders[normalized_show]
-                target_path = target_folder / episode_path.name
+            # Use enhanced matching to find existing show folder
+            best_match_folder = _find_best_matching_show_folder(show_name, all_existing_folders)
+            
+            if best_match_folder:
+                # Move to existing show folder (with enhanced matching)
+                # Create season folder if needed
+                season_folder = best_match_folder / f"Season {season}"
+                target_path = season_folder / episode_path.name
                 action = 'move_to_existing'
+                target_show_name = best_match_folder.name  # Use actual folder name
             else:
                 # Need to create new show folder
                 show_folder_name = show_name  # Use original extracted name
                 target_folder = Path(directory) / show_folder_name
-                target_path = target_folder / episode_path.name
+                season_folder = target_folder / f"Season {season}"
+                target_path = season_folder / episode_path.name
                 action = 'create_folder_and_move'
                 new_folders_needed.add(show_folder_name)
+                target_show_name = show_name
             
             move = EpisodeMove(
                 source_path=episode_path,
                 target_path=target_path,
-                show_name=show_name,
+                show_name=target_show_name,  # Use consistent show name
                 season=season,
                 episode=episode,
                 size=file_size,
                 action=action
             )
             all_moves.append(move)
+    
+    # Handle duplicates by keeping largest files
+    all_moves = _handle_duplicate_episodes(all_moves)
     
     return TVMoveAnalysis(
         moves=all_moves,

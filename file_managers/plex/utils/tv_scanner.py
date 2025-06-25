@@ -20,6 +20,8 @@ VIDEO_EXTENSIONS = config.video_extensions_set
 
 # TV show name patterns - common naming conventions
 TV_SHOW_PATTERNS = [
+    # Special case: "Show Name S01E01 - S01E01 - ..." (extract only "Show Name")
+    r'^(.+?)\s+S\d+E\d+\s*-\s*S(\d+)E(\d+)',
     # Show.Name.S01E01.Episode.Title.quality.mkv
     r'^(.+?)\.S(\d+)E(\d+)',
     # Show Name - S01E01 - Episode Title.mkv  
