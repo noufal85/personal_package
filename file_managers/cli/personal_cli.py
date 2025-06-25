@@ -1779,10 +1779,20 @@ Version: """ + __version__
             print("1. Show API configuration status")
             print("2. Test API connectivity")
             print("3. API configuration help")
+            print("b. Back to main menu")
+            print("q. Quit")
             print()
             
-            choice = input("Select option (1-3): ").strip()
+            choice = input("Select option (1-3, b, q): ").strip().lower()
             print()
+            
+            if choice in ['b', 'back']:
+                return
+            elif choice in ['q', 'quit']:
+                exit(0)
+            elif choice not in ['1', '2', '3']:
+                print("❌ Invalid choice. Please select 1, 2, 3, b, or q.")
+                return
             
             # Create mock args object
             class MockArgs:
@@ -1793,7 +1803,11 @@ Version: """ + __version__
                     elif choice == '2':
                         self.show = False
                         self.check = True
+                    elif choice == '3':
+                        self.show = False
+                        self.check = False
                     else:
+                        # Shouldn't reach here due to validation above
                         self.show = False
                         self.check = False
             
@@ -1897,26 +1911,48 @@ Version: """ + __version__
             print("-" * 25)
             print("1. Use predefined TV directories")
             print("2. Use custom directories")
+            print("b. Back to main menu")
+            print("q. Quit")
             print()
             
-            choice = input("Select directory option (1-2): ").strip()
+            choice = input("Select directory option (1-2, b, q): ").strip().lower()
             print()
+            
+            if choice in ['b', 'back']:
+                return
+            elif choice in ['q', 'quit']:
+                exit(0)
             
             custom_dirs = None
             if choice == '2':
-                custom_dirs = input("Enter comma-separated directory paths: ").strip()
+                custom_dirs = input("Enter comma-separated directory paths (or 'b' to go back): ").strip()
+                if custom_dirs.lower() in ['b', 'back']:
+                    return
                 if not custom_dirs:
                     print("❌ Custom directories cannot be empty.")
                     return
+            elif choice != '1':
+                print("❌ Invalid choice. Please select 1, 2, b, or q.")
+                return
             
             print("Organization mode:")
             print("1. Analysis only (show what would be moved)")
             print("2. Demo mode (detailed preview)")
             print("3. Execute mode (actually move files - DANGEROUS!)")
+            print("b. Back to directory selection")
+            print("q. Quit")
             print()
             
-            mode_choice = input("Select mode (1-3): ").strip()
+            mode_choice = input("Select mode (1-3, b, q): ").strip().lower()
             print()
+            
+            if mode_choice in ['b', 'back']:
+                return self._interactive_tv_organize()  # Restart the TV organization menu
+            elif mode_choice in ['q', 'quit']:
+                exit(0)
+            elif mode_choice not in ['1', '2', '3']:
+                print("❌ Invalid choice. Please select 1, 2, 3, b, or q.")
+                return
             
             # Create mock args object
             class MockArgs:
@@ -2831,9 +2867,132 @@ Version: """ + __version__
                 confirm = input("\nType 'ORGANIZE FILES' to continue: ").strip()
                 if confirm == "ORGANIZE FILES":
                     print("🗂️  Starting TV show organization...")
-                    # TODO: Implement actual file moving logic
-                    print("⚠️  Organization functionality coming soon!")
-                    print("     Use --demo mode to see what would be moved")
+                    
+                    # Import the TV mover utilities
+                    from ..plex.utils.tv_mover import analyze_tv_moves, execute_moves, print_move_analysis
+                    import logging
+                    
+                    # Setup detailed logging
+                    log_file = Path("logs") / f"tv_organization_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+                    log_file.parent.mkdir(exist_ok=True)
+                    
+                    # Create logger
+                    logger = logging.getLogger("tv_organization")
+                    logger.setLevel(logging.DEBUG)
+                    
+                    # Clear existing handlers
+                    for handler in logger.handlers[:]:
+                        logger.removeHandler(handler)
+                    
+                    # File handler for detailed logs
+                    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+                    file_handler.setLevel(logging.DEBUG)
+                    file_formatter = logging.Formatter(
+                        '%(asctime)s | %(levelname)-8s | %(funcName)-20s | %(message)s',
+                        datefmt='%Y-%m-%d %H:%M:%S'
+                    )
+                    file_handler.setFormatter(file_formatter)
+                    logger.addHandler(file_handler)
+                    
+                    # Console handler for user feedback
+                    console_handler = logging.StreamHandler()
+                    console_handler.setLevel(logging.INFO)
+                    console_formatter = logging.Formatter('%(levelname)s: %(message)s')
+                    console_handler.setFormatter(console_formatter)
+                    logger.addHandler(console_handler)
+                    
+                    try:
+                        logger.info("=== TV ORGANIZATION SESSION STARTED ===")
+                        logger.info(f"Log file: {log_file}")
+                        logger.info(f"User confirmed organization mode")
+                        
+                        # Get TV directories from config
+                        tv_dirs = self.config.tv_directories
+                        logger.info(f"Using TV directories: {tv_dirs}")
+                        
+                        print(f"\n📂 Analyzing TV directories...")
+                        for i, tv_dir in enumerate(tv_dirs, 1):
+                            print(f"   {i}. {tv_dir}")
+                        
+                        # Analyze what needs to be moved
+                        logger.info("Starting TV move analysis")
+                        analysis = analyze_tv_moves(
+                            directories=tv_dirs,
+                            find_small_folders_flag=True,  # Also find small folders for cleanup
+                            max_size_mb=100  # 100MB threshold for small folders
+                        )
+                        logger.info(f"Analysis complete: {analysis.total_episodes} episodes, {len(analysis.new_folders_needed)} new folders needed")
+                        
+                        if not analysis.moves and not analysis.small_folders:
+                            print("✅ No loose episodes or small folders found!")
+                            print("   All TV episodes are already properly organized.")
+                            logger.info("No organization needed - all episodes properly organized")
+                            return 0
+                        
+                        # Show detailed analysis
+                        print(f"\n" + "=" * 70)
+                        print(f"📊 TV ORGANIZATION ANALYSIS RESULTS")
+                        print(f"=" * 70)
+                        print_move_analysis(analysis, dry_run=False)
+                        
+                        # Log analysis results
+                        logger.info(f"Episodes to move: {len(analysis.moves)}")
+                        logger.info(f"Small folders to clean: {len(analysis.small_folders)}")
+                        logger.info(f"New folders to create: {len(analysis.new_folders_needed)}")
+                        
+                        if analysis.moves:
+                            for move in analysis.moves[:10]:  # Log first 10 moves
+                                logger.debug(f"Move planned: {move.source_path} -> {move.target_path}")
+                        
+                        # Final confirmation before execution
+                        print(f"\n" + "⚠️ " * 15)
+                        print(f"⚠️  FINAL CONFIRMATION REQUIRED!")
+                        print(f"⚠️  This will PERMANENTLY move {len(analysis.moves)} TV episode files!")
+                        if analysis.small_folders:
+                            print(f"⚠️  This will DELETE {len(analysis.small_folders)} small/empty folders!")
+                        print(f"⚠️  Make sure you have BACKUPS before proceeding!")
+                        print(f"⚠️ " * 15)
+                        
+                        final_confirm = input("\nType 'EXECUTE MOVES' to proceed with organization: ").strip()
+                        if final_confirm == "EXECUTE MOVES":
+                            logger.info("User confirmed final execution")
+                            print(f"\n🚀 EXECUTING TV ORGANIZATION...")
+                            print(f"📋 Session log: {log_file}")
+                            
+                            # Execute the moves with detailed logging
+                            success = execute_moves(
+                                analysis=analysis,
+                                delete_small=True,  # Delete small folders
+                                directories=tv_dirs
+                            )
+                            
+                            if success:
+                                print(f"\n🎉 TV ORGANIZATION COMPLETED SUCCESSFULLY!")
+                                print(f"✅ Moved {len(analysis.moves)} episodes")
+                                if analysis.small_folders:
+                                    print(f"✅ Cleaned up {len(analysis.small_folders)} small folders")
+                                print(f"📄 Detailed log: {log_file}")
+                                logger.info("TV organization completed successfully")
+                            else:
+                                print(f"\n⚠️  TV ORGANIZATION COMPLETED WITH SOME ERRORS")
+                                print(f"❌ Check the output above for details")
+                                print(f"📄 Detailed log: {log_file}")
+                                logger.warning("TV organization completed with errors")
+                        else:
+                            print(f"\n🚫 TV organization cancelled by user")
+                            logger.info("TV organization cancelled by user")
+                    
+                    except Exception as e:
+                        print(f"\n❌ Error during TV organization: {e}")
+                        logger.error(f"TV organization failed: {e}", exc_info=True)
+                        return 1
+                    
+                    finally:
+                        logger.info("=== TV ORGANIZATION SESSION ENDED ===")
+                        # Clean up handlers
+                        for handler in logger.handlers[:]:
+                            logger.removeHandler(handler)
+                            
                 else:
                     print("🚫 Organization cancelled")
                 return 0
@@ -2859,7 +3018,7 @@ Version: """ + __version__
                 print(f"  Total episodes to organize: {total_episodes}")
                 print(f"\n⚠️  IMPORTANT: This is analysis only - NO FILES WERE MOVED")
                 print(f"      Use --demo to see organization plan")
-                print(f"      Use --execute to actually move files (coming soon)")
+                print(f"      Use --execute to actually move files")
             else:
                 print(f"\n✅ All TV episodes appear to be properly organized!")
             

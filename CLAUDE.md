@@ -116,11 +116,14 @@ Personal packages repository containing utility scripts and tools. Currently inc
 - `python -m file_managers.plex.utils.tv_report_generator` - Generate TV folder analysis and organization plan reports
 
 **TV Episode Organization:**
-- `python -m file_managers.plex.utils.tv_mover` - Organize loose TV episodes (dry run by default)
+- `plex-cli tv organize` - Analyze TV folder structure and generate organization plan
+- `plex-cli tv organize --demo` - Preview mode showing what would be moved
+- `plex-cli tv organize --execute` - Interactive TV organization with detailed logging
+- `python -m file_managers.plex.utils.tv_mover` - Direct TV mover utility (dry run by default)
 - `python -m file_managers.plex.utils.tv_mover --execute` - Actually move episodes to proper show folders
 - `python -m file_managers.plex.utils.tv_mover --delete-small` - Also find and delete small folders (<100MB)
 - `python -m file_managers.plex.utils.tv_mover --custom "path1,path2"` - Use custom TV directories
-- Automatically cleans up empty/small folders after moving episodes
+- `python run_tv_organization.py` - Demo script showing TV organization features
 
 **TV Episode Organization Features:**
 - Finds episodes outside proper show folders (loose files, season folders)
@@ -128,6 +131,11 @@ Personal packages repository containing utility scripts and tools. Currently inc
 - Automatic cleanup of empty/small folders (<100MB) after moves
 - Dry run mode shows what would be moved without making changes
 - Safety confirmations before executing moves
+- **Enhanced Logging**: Session-specific logs with detailed progress tracking
+- **Real-time Progress**: Show-by-show move tracking with file sizes
+- **Error Recovery**: Unique filename generation for conflicts
+- **Comprehensive Cleanup**: Post-move cleanup of empty/small folders
+- **Double Confirmation**: Two-step safety confirmation for execution
 
 #### AI-Powered Media Search and Analysis
 
@@ -315,6 +323,14 @@ file_managers/
 - `run_movie_scanner.py` - Easy movie duplicate scanner launcher
 - `run_media_assistant.py` - Easy AI-powered media assistant launcher
 - `run_media_autoorganizer.py` - Easy media auto-organizer launcher
+- `run_tv_organization.py` - TV organization features and demo
+
+**Interactive Menu Navigation:**
+- `b` or `back` - Return to previous menu
+- `q` or `quit` - Exit application
+- All interactive menus include proper exit options
+- Input validation prevents invalid choices
+- Recursive menu support for complex workflows
 
 ### Design Patterns
 - Utility functions in `utils/` modules for reusable functionality

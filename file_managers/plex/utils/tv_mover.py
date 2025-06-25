@@ -497,98 +497,169 @@ def execute_moves(analysis: TVMoveAnalysis, delete_small: bool = False, director
     Returns:
         True if all operations completed successfully, False otherwise
     """
-    print(f"\nEXECUTING TV EPISODE MOVES...")
-    print("=" * 50)
+    import logging
+    logger = logging.getLogger("tv_organization")
+    
+    print(f"\n🚀 EXECUTING TV EPISODE MOVES...")
+    print("=" * 70)
+    logger.info(f"Starting execution of {len(analysis.moves)} moves")
     
     success_count = 0
     error_count = 0
     
     # Create new folders first
-    for folder_name in analysis.new_folders_needed:
-        # Find the directory where this folder should be created
-        folder_moves = [m for m in analysis.moves if m.target_path.parent.name == folder_name]
-        if folder_moves:
-            target_folder = folder_moves[0].target_path.parent
-            try:
-                target_folder.mkdir(parents=True, exist_ok=True)
-                print(f"Created folder: {target_folder}")
-            except Exception as e:
-                print(f"Failed to create folder {target_folder}: {e}")
-                error_count += 1
-                continue
-    
-    # Execute moves
-    for i, move in enumerate(analysis.moves, 1):
-        print(f"\n[{i}/{len(analysis.moves)}] Moving: {move.source_path.name}")
-        print(f"  FROM: {move.source_path.parent}")
-        print(f"  TO:   {move.target_path.parent}")
+    if analysis.new_folders_needed:
+        print(f"\n📁 Creating {len(analysis.new_folders_needed)} new show folders...")
+        logger.info(f"Creating {len(analysis.new_folders_needed)} new folders")
         
-        try:
-            # Ensure target directory exists
-            move.target_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Check if target file already exists
-            if move.target_path.exists():
-                print(f"  Target file already exists: {move.target_path}")
-                # Create unique name by adding number
-                base_name = move.target_path.stem
-                extension = move.target_path.suffix
-                counter = 1
-                while move.target_path.exists():
-                    new_name = f"{base_name}_{counter}{extension}"
-                    move = move._replace(target_path=move.target_path.parent / new_name)
-                    counter += 1
-                print(f"  Using new name: {move.target_path.name}")
-            
-            # Perform the move
-            shutil.move(str(move.source_path), str(move.target_path))
-            print(f"  Successfully moved")
-            success_count += 1
-            
-        except Exception as e:
-            print(f"  Failed to move: {e}")
-            error_count += 1
+        for i, folder_name in enumerate(analysis.new_folders_needed, 1):
+            # Find the directory where this folder should be created
+            folder_moves = [m for m in analysis.moves if m.target_path.parent.name == folder_name]
+            if folder_moves:
+                target_folder = folder_moves[0].target_path.parent
+                try:
+                    target_folder.mkdir(parents=True, exist_ok=True)
+                    print(f"   [{i}/{len(analysis.new_folders_needed)}] ✅ Created: {target_folder}")
+                    logger.info(f"Created folder: {target_folder}")
+                except Exception as e:
+                    print(f"   [{i}/{len(analysis.new_folders_needed)}] ❌ Failed: {target_folder} - {e}")
+                    logger.error(f"Failed to create folder {target_folder}: {e}")
+                    error_count += 1
+                    continue
     
-    print(f"\nMOVE RESULTS:")
-    print(f"  Successful moves: {success_count}")
-    print(f"  Failed moves: {error_count}")
-    print(f"  Total processed: {len(analysis.moves)}")
+    # Execute moves with detailed progress tracking
+    if analysis.moves:
+        print(f"\n📺 Moving {len(analysis.moves)} TV episodes...")
+        logger.info(f"Starting move execution for {len(analysis.moves)} episodes")
+        
+        # Group moves by show for better progress display
+        from collections import defaultdict
+        moves_by_show = defaultdict(list)
+        for move in analysis.moves:
+            moves_by_show[move.show_name].append(move)
+        
+        for show_name, show_moves in moves_by_show.items():
+            print(f"\n🎬 Processing: {show_name} ({len(show_moves)} episodes)")
+            logger.info(f"Processing show: {show_name} - {len(show_moves)} episodes")
+            
+            for j, move in enumerate(show_moves, 1):
+                episode_info = f"S{move.season:02d}E{move.episode:02d}"
+                print(f"   [{j}/{len(show_moves)}] {episode_info} - {move.source_path.name}")
+                print(f"      FROM: {move.source_path.parent}")
+                print(f"      TO:   {move.target_path.parent}")
+                
+                try:
+                    # Ensure target directory exists
+                    move.target_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Check if target file already exists
+                    if move.target_path.exists():
+                        print(f"      ⚠️  Target exists, creating unique name...")
+                        logger.warning(f"Target file exists: {move.target_path}")
+                        # Create unique name by adding number
+                        base_name = move.target_path.stem
+                        extension = move.target_path.suffix
+                        counter = 1
+                        original_target = move.target_path
+                        while move.target_path.exists():
+                            new_name = f"{base_name}_{counter}{extension}"
+                            move = move._replace(target_path=move.target_path.parent / new_name)
+                            counter += 1
+                        print(f"      📝 New name: {move.target_path.name}")
+                        logger.info(f"Using unique name: {move.target_path.name}")
+                    
+                    # Perform the move
+                    file_size = move.source_path.stat().st_size
+                    shutil.move(str(move.source_path), str(move.target_path))
+                    print(f"      ✅ Moved ({format_file_size(file_size)})")
+                    logger.info(f"Successfully moved: {move.source_path} -> {move.target_path}")
+                    success_count += 1
+                    
+                except Exception as e:
+                    print(f"      ❌ Failed: {e}")
+                    logger.error(f"Failed to move {move.source_path}: {e}")
+                    error_count += 1
+    
+    print(f"\n📊 MOVE RESULTS:")
+    print(f"   ✅ Successful moves: {success_count}")
+    print(f"   ❌ Failed moves: {error_count}")
+    print(f"   📋 Total processed: {len(analysis.moves)}")
+    
+    if success_count > 0:
+        moved_size = sum(move.size for move in analysis.moves)
+        print(f"   💾 Data organized: {format_file_size(moved_size)}")
+    
+    logger.info(f"Move results: {success_count} success, {error_count} failed")
     
     # Delete pre-existing small folders if requested
     delete_success = 0
     delete_errors = 0
     if delete_small and analysis.small_folders:
+        print(f"\n🗑️  CLEANING PRE-EXISTING SMALL FOLDERS...")
+        logger.info(f"Cleaning {len(analysis.small_folders)} small folders")
         delete_success, delete_errors = delete_small_folders(analysis.small_folders)
-        print(f"\nPRE-EXISTING SMALL FOLDER DELETION RESULTS:")
-        print(f"  Successful deletions: {delete_success}")
-        print(f"  Failed deletions: {delete_errors}")
-        print(f"  Total processed: {len(analysis.small_folders)}")
+        print(f"\n📊 SMALL FOLDER CLEANUP RESULTS:")
+        print(f"   ✅ Successful deletions: {delete_success}")
+        print(f"   ❌ Failed deletions: {delete_errors}")
+        print(f"   📋 Total processed: {len(analysis.small_folders)}")
+        logger.info(f"Small folder cleanup: {delete_success} success, {delete_errors} failed")
     
     # Automatically clean up folders that became empty/small after moves
     cleanup_success = 0
     cleanup_errors = 0
     if analysis.moves and directories:
-        print(f"\nCLEANING UP EMPTY/SMALL FOLDERS AFTER MOVES...")
-        print("=" * 50)
+        print(f"\n🧹 CLEANING UP EMPTY/SMALL FOLDERS AFTER MOVES...")
+        print("=" * 70)
+        logger.info("Starting post-move cleanup")
         
         # Find folders that became empty or small after the moves
         folders_to_cleanup = find_empty_or_small_folders_after_moves(analysis.moves, directories)
         
         if folders_to_cleanup:
-            print(f"Found {len(folders_to_cleanup)} folders to clean up:")
+            print(f"📂 Found {len(folders_to_cleanup)} folders to clean up:")
+            logger.info(f"Found {len(folders_to_cleanup)} folders for cleanup")
+            
             for folder in folders_to_cleanup:
                 if folder.size == 0:
-                    print(f"  - {folder.path.name} (EMPTY)")
+                    print(f"   📭 {folder.path.name} (EMPTY)")
+                    logger.debug(f"Empty folder for cleanup: {folder.path}")
                 else:
-                    print(f"  - {folder.path.name} ({format_file_size(folder.size)}, {folder.file_count} files)")
+                    print(f"   📁 {folder.path.name} ({format_file_size(folder.size)}, {folder.file_count} files)")
+                    logger.debug(f"Small folder for cleanup: {folder.path} - {folder.size} bytes")
             
             cleanup_success, cleanup_errors = delete_small_folders(folders_to_cleanup)
-            print(f"\nCLEANUP RESULTS:")
-            print(f"  Successful cleanups: {cleanup_success}")
-            print(f"  Failed cleanups: {cleanup_errors}")
-            print(f"  Total processed: {len(folders_to_cleanup)}")
+            print(f"\n📊 POST-MOVE CLEANUP RESULTS:")
+            print(f"   ✅ Successful cleanups: {cleanup_success}")
+            print(f"   ❌ Failed cleanups: {cleanup_errors}")
+            print(f"   📋 Total processed: {len(folders_to_cleanup)}")
+            logger.info(f"Post-move cleanup: {cleanup_success} success, {cleanup_errors} failed")
         else:
-            print("No folders need cleanup - source directories still contain content.")
+            print("✅ No folders need cleanup - source directories still contain content.")
+            logger.info("No post-move cleanup needed")
+    
+    # Final summary
+    total_success = success_count + delete_success + cleanup_success
+    total_errors = error_count + delete_errors + cleanup_errors
+    
+    print(f"\n🎉 TV ORGANIZATION COMPLETE!")
+    print("=" * 70)
+    print(f"📊 FINAL SUMMARY:")
+    print(f"   📺 Episodes moved: {success_count}")
+    if delete_success > 0:
+        print(f"   🗑️  Small folders cleaned: {delete_success}")
+    if cleanup_success > 0:
+        print(f"   🧹 Post-move cleanup: {cleanup_success}")
+    print(f"   ✅ Total successful operations: {total_success}")
+    if total_errors > 0:
+        print(f"   ❌ Total errors: {total_errors}")
+    print("=" * 70)
+    
+    if total_errors == 0:
+        print("🎊 ALL OPERATIONS COMPLETED SUCCESSFULLY!")
+        logger.info("TV organization completed successfully - no errors")
+    else:
+        print(f"⚠️  COMPLETED WITH {total_errors} ERRORS - check log for details")
+        logger.warning(f"TV organization completed with {total_errors} errors")
     
     return error_count == 0 and delete_errors == 0 and cleanup_errors == 0
 

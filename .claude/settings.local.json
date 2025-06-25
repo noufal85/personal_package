@@ -29,7 +29,8 @@
       "Bash(rg:*)",
       "Bash(true)",
       "Bash(sqlite3:*)",
-      "Bash(echo)"
+      "Bash(echo)",
+      "Bash(git push:*)"
     ],
     "deny": []
   }
