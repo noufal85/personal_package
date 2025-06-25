@@ -25,6 +25,7 @@ project_root = Path(__file__).parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from file_managers.plex.tv_organizer.core.duplicate_detector import DuplicateDetector
+from file_managers.plex.tv_organizer.core.enhanced_duplicate_detector import EnhancedDuplicateDetector
 from file_managers.plex.tv_organizer.core.loose_episode_finder import LooseEpisodeFinder
 from file_managers.plex.config.config import config
 
@@ -148,6 +149,19 @@ class TVOrganizerCLI:
             default='text',
             help='Output format for reports (default: text)'
         )
+        
+        duplicates_parser.add_argument(
+            '--enhanced',
+            action='store_true',
+            default=True,
+            help='Use enhanced duplicate detection (default: enabled)'
+        )
+        
+        duplicates_parser.add_argument(
+            '--original',
+            action='store_true',
+            help='Use original duplicate detection (may have false positives)'
+        )
     
     def _add_loose_commands(self, subparsers):
         """Add loose episode detection commands (Phase 1 - placeholder)."""
@@ -228,11 +242,12 @@ class TVOrganizerCLI:
         """Get help epilog with examples."""
         return """
 Examples:
-  # Phase 0: Duplicate Detection (Available)
-  python3 tv_organizer.py duplicates --scan --report         # Scan and generate report
-  python3 tv_organizer.py duplicates --stats                 # Show statistics only
+  # Phase 0: Enhanced Duplicate Detection (Available)
+  python3 tv_organizer.py duplicates --scan --report         # Scan with enhanced detection
+  python3 tv_organizer.py duplicates --stats                 # Show statistics (enhanced)
   python3 tv_organizer.py duplicates --show "Breaking Bad"   # Show duplicates for specific show
   python3 tv_organizer.py dup --format json --output dups.json  # JSON format output
+  python3 tv_organizer.py duplicates --scan --original       # Use original detection (more false positives)
   
   # Phase 1-3: Future Commands (Coming Soon)
   python3 tv_organizer.py loose --scan                       # 🚧 Phase 1 - Not implemented
@@ -269,8 +284,23 @@ Configuration:
             print(f"  {i}. {directory}")
         print()
         
+        # Choose detector type
+        use_enhanced = not args.original  # Default to enhanced unless --original specified
+        detector_type = "Enhanced" if use_enhanced else "Original"
+        print(f"🔍 Using {detector_type} Duplicate Detection")
+        if use_enhanced:
+            print("   ✅ False positive filtering enabled")
+            print("   ✅ Content analysis enabled")
+            print("   ✅ Confidence scoring enabled")
+        else:
+            print("   ⚠️  Original detection (may include false positives)")
+        print()
+        
         # Initialize detector
-        detector = DuplicateDetector(directories)
+        if use_enhanced:
+            detector = EnhancedDuplicateDetector(directories)
+        else:
+            detector = DuplicateDetector(directories)
         
         try:
             # Always scan first
@@ -353,9 +383,13 @@ Configuration:
         else:
             self._generate_text_report(detector, output_file)
     
-    def _generate_text_report(self, detector: DuplicateDetector, output_file: str):
+    def _generate_text_report(self, detector, output_file: str):
         """Generate text format report."""
-        report = detector.generate_report()
+        # Use enhanced report if available
+        if hasattr(detector, 'generate_enhanced_report'):
+            report = detector.generate_enhanced_report()
+        else:
+            report = detector.generate_report()
         
         output_path = Path(output_file)
         output_path.write_text(report)
