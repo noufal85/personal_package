@@ -7,10 +7,10 @@ It provides access to all phases of TV organization without being integrated
 into the main plex-cli system.
 
 Usage:
-    python -m file_managers.plex.tv_organizer.cli.tv_organizer_cli [command] [options]
+    python3 -m file_managers.plex.tv_organizer.cli.tv_organizer_cli [command] [options]
     
     Or using the standalone script:
-    python tv_organizer.py [command] [options]
+    python3 tv_organizer.py [command] [options]
 """
 
 import argparse
@@ -229,22 +229,22 @@ class TVOrganizerCLI:
         return """
 Examples:
   # Phase 0: Duplicate Detection (Available)
-  tv-organizer duplicates --scan --report         # Scan and generate report
-  tv-organizer duplicates --stats                 # Show statistics only
-  tv-organizer duplicates --show "Breaking Bad"   # Show duplicates for specific show
-  tv-organizer dup --format json --output dups.json  # JSON format output
+  python3 tv_organizer.py duplicates --scan --report         # Scan and generate report
+  python3 tv_organizer.py duplicates --stats                 # Show statistics only
+  python3 tv_organizer.py duplicates --show "Breaking Bad"   # Show duplicates for specific show
+  python3 tv_organizer.py dup --format json --output dups.json  # JSON format output
   
   # Phase 1-3: Future Commands (Coming Soon)
-  tv-organizer loose --scan                       # 🚧 Phase 1 - Not implemented
-  tv-organizer resolve --analyze                  # 🚧 Phase 2 - Not implemented  
-  tv-organizer organize --dry-run                 # 🚧 Phase 3 - Not implemented
+  python3 tv_organizer.py loose --scan                       # 🚧 Phase 1 - Not implemented
+  python3 tv_organizer.py resolve --analyze                  # 🚧 Phase 2 - Not implemented  
+  python3 tv_organizer.py organize --dry-run                 # 🚧 Phase 3 - Not implemented
   
   # Utility Commands
-  tv-organizer config --show                      # Show configuration
-  tv-organizer status                             # Show status and phase info
+  python3 tv_organizer.py config --show                      # Show configuration
+  python3 tv_organizer.py status                             # Show status and phase info
   
   # Custom directories
-  tv-organizer duplicates --scan --directories /path/to/tv1 /path/to/tv2
+  python3 tv_organizer.py duplicates --scan --directories /path/to/tv1 /path/to/tv2
 
 Phase Status:
   ✅ Phase 0: Duplicate Detection - Complete and tested

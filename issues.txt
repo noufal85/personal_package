@@ -1,0 +1,94 @@
+1. these are not duplicates - similar patter with most of the report 
+
+1. Extreme Engineering TV S1 3 & S4E1E2 S04E01: 27 duplicates, 18797.6MB total, 18097.4MB can be saved
+   Action: keep_largest
+   Keep: Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Excavators DVDXVID_1.avi
+         (unknown, 700.2MB)
+   Remove:
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Transatlantic Tunnel DVDXVID_1.avi
+       (unknown, 699.4MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering City in a Pyramid DVDXVID_1.avi
+       (unknown, 699.5MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Bridging the Bering Strait DVDXVID_1.avi
+       (unknown, 699.4MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Tunneling Under the Alps DVDXVID_1.avi
+       (unknown, 699.5MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Building Hong Kong's Airport DVDXVID_1.avi
+       (unknown, 699.5MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Holland's Barrier's to the Sea DVDXVID_1.avi
+       (unknown, 699.5MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Boston's Big Dig DVDXVID_1.avi
+       (unknown, 699.5MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Widening the Panama Canal DVDXVID_1.avi
+       (unknown, 699.5MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Turning Torso DVDXVID_1.avi
+       (unknown, 700.1MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Venice Flood Gates DVDXVID_1.avi
+       (unknown, 700.0MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Container Ships DVDXVID_1.avi
+       (unknown, 700.1MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Oakland Bay Bridge DVDXVID_1.avi
+       (unknown, 700.1MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Iceland Tunnels DVDXVID_1.avi
+       (unknown, 699.5MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Offshore Oil Platforms DVDXVID_1.avi
+       (unknown, 700.1MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Cooper River Bridge DVDXVID_1.avi
+       (unknown, 666.1MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Millau Viaduct DVDXVID_1.avi
+       (unknown, 700.1MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering The Snohvit Artic Gas Processing Platform DVDXVID_1.avi
+       (unknown, 699.5MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering The El Cajun Dam DVDXVID_1.avi
+       (unknown, 673.5MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Hong Kong Cable Car DVDXVID_1.avi
+       (unknown, 699.5MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Woodrow Wilson Bridge DVDXVID_1.avi
+       (unknown, 699.4MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Gotthard Tunnel DVDXVID_1.avi
+       (unknown, 699.5MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Dubai's Ski Resort DVDXVID_1.avi
+       (unknown, 699.5MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Super Stadium DVDXVID_1.avi
+       (unknown, 665.5MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Mega Tunnel DVDXVID_1.avi
+       (unknown, 700.1MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Tokyo's Sky City DVDXVID_1.avi
+       (unknown, 699.4MB)
+     - Extreme Engineering TV S1 3 & S4e1e2 - S04E01 S04E02 - TV Extreme Engineering Subways in America DVDXVID_1.avi
+       (unknown, 699.5MB)
+   Notes:
+     • All episodes have similar quality, keeping largest file
+
+    
+    4. Mr Robot S03E03: 11 duplicates, 6129.0MB total, 4983.1MB can be saved
+   Action: keep_best_quality
+   Keep: Mr.Robot.S03E03.BluRay.10Bit.1080p.DD5.1.H265-d3g_1.mkv
+         (1080p, 1145.9MB)
+   Remove:
+     - Mr.Robot.S03E3_1.720p.HDTV.x264-GHETTO.mp4
+       (720p, 497.3MB)
+     - Mr.Robot.S03E3_2.720p.HDTV.x264-GHETTO.mp4
+       (720p, 497.6MB)
+     - Mr.Robot.S03E3_3.720p.HDTV.x264-GHETTO.mp4
+       (720p, 497.3MB)
+     - Mr.Robot.S03E3_4.720p.HDTV.x264-GHETTO.mp4
+       (720p, 496.9MB)
+     - Mr.Robot.S03E3_5.720p.HDTV.x264-GHETTO.mp4
+       (720p, 500.1MB)
+     - Mr.Robot.S03E3_6.720p.HDTV.x264-GHETTO.mp4
+       (720p, 496.9MB)
+     - Mr.Robot.S03E3_7.720p.HDTV.x264-GHETTO.mp4
+       (720p, 496.6MB)
+     - Mr.Robot.S03E3_8.720p.HDTV.x264-GHETTO.mp4
+       (720p, 496.7MB)
+     - Mr.Robot.S03E3_9.720p.HDTV.x264-GHETTO.mp4
+       (720p, 505.9MB)
+     - Mr Robot - S03E03 - eps3.2_legacy.so.mp4
+       (unknown, 497.8MB)
+   Notes:
+     • Keeping best quality: 1080p
+     • Quality variations: 1080p, 720p, unknown
+     • Source variations: BluRay, HDTV
+     • Significant size difference: 496.6MB to 1145.9MB
+     • Episodes in 3 different folders

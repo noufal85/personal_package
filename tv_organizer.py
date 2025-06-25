@@ -6,13 +6,13 @@ Convenient launcher script for the TV File Organizer CLI.
 This script can be run directly from the project root.
 
 Usage:
-    python tv_organizer.py [command] [options]
+    python3 tv_organizer.py [command] [options]
     
 Examples:
-    python tv_organizer.py duplicates --scan --report
-    python tv_organizer.py status
-    python tv_organizer.py config --show
-    python tv_organizer.py --help
+    python3 tv_organizer.py duplicates --scan --report
+    python3 tv_organizer.py status
+    python3 tv_organizer.py config --show
+    python3 tv_organizer.py --help
 """
 
 import sys

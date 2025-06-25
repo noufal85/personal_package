@@ -22,20 +22,20 @@ There are three ways to run the TV File Organizer:
 ### Method 1: Standalone Script (Recommended)
 ```bash
 # From the project root directory
-python tv_organizer.py [command] [options]
+python3 tv_organizer.py [command] [options]
 ```
 
 ### Method 2: Python Module
 ```bash
 # From the project root directory  
-python -m file_managers.plex.tv_organizer.cli.tv_organizer_cli [command] [options]
+python3 -m file_managers.plex.tv_organizer.cli.tv_organizer_cli [command] [options]
 ```
 
 ### Method 3: Direct Script Execution
 ```bash
 # Navigate to the CLI directory
 cd file_managers/plex/tv_organizer/cli/
-python tv_organizer_cli.py [command] [options]
+python3 tv_organizer_cli.py [command] [options]
 ```
 
 ## Available Commands
@@ -45,38 +45,38 @@ python tv_organizer_cli.py [command] [options]
 #### Basic Duplicate Scan
 ```bash
 # Scan all directories and show statistics
-python tv_organizer.py duplicates --scan
+python3 tv_organizer.py duplicates --scan
 
 # Scan and generate detailed report
-python tv_organizer.py duplicates --scan --report
+python3 tv_organizer.py duplicates --scan --report
 
 # Show statistics only (if already scanned)
-python tv_organizer.py duplicates --stats
+python3 tv_organizer.py duplicates --stats
 ```
 
 #### Duplicate Reports
 ```bash
 # Generate text report (default)
-python tv_organizer.py duplicates --report --output my_duplicates.txt
+python3 tv_organizer.py duplicates --report --output my_duplicates.txt
 
 # Generate JSON report
-python tv_organizer.py duplicates --report --format json --output duplicates.json
+python3 tv_organizer.py duplicates --report --format json --output duplicates.json
 
 # Show duplicates for specific show
-python tv_organizer.py duplicates --show "Breaking Bad"
+python3 tv_organizer.py duplicates --show "Breaking Bad"
 ```
 
 #### Custom Directories
 ```bash
 # Scan custom directories instead of config defaults
-python tv_organizer.py duplicates --scan --directories /path/to/tv1 /path/to/tv2
+python3 tv_organizer.py duplicates --scan --directories /path/to/tv1 /path/to/tv2
 ```
 
 #### Short Aliases
 ```bash
 # Use short command aliases
-python tv_organizer.py dup --scan          # 'dup' instead of 'duplicates'
-python tv_organizer.py d --stats           # 'd' instead of 'duplicates'
+python3 tv_organizer.py dup --scan          # 'dup' instead of 'duplicates'
+python3 tv_organizer.py d --stats           # 'd' instead of 'duplicates'
 ```
 
 ### 🔧 Configuration Commands
@@ -84,10 +84,10 @@ python tv_organizer.py d --stats           # 'd' instead of 'duplicates'
 #### Show Configuration
 ```bash
 # Display current TV directories and settings
-python tv_organizer.py config --show
+python3 tv_organizer.py config --show
 
 # Short alias
-python tv_organizer.py cfg --show
+python3 tv_organizer.py cfg --show
 ```
 
 ### 📊 Status Commands
@@ -95,10 +95,10 @@ python tv_organizer.py cfg --show
 #### Check Status
 ```bash
 # Show current phase status and available commands
-python tv_organizer.py status
+python3 tv_organizer.py status
 
 # Short alias  
-python tv_organizer.py stat
+python3 tv_organizer.py stat
 ```
 
 ### 🚧 Future Commands (Coming Soon)
@@ -107,14 +107,14 @@ These commands are placeholders for future phases:
 
 ```bash
 # Phase 1: Loose Episode Detection (planned)
-python tv_organizer.py loose --scan
+python3 tv_organizer.py loose --scan
 
 # Phase 2: Path Resolution (planned)
-python tv_organizer.py resolve --analyze
+python3 tv_organizer.py resolve --analyze
 
 # Phase 3: Organization Execution (planned)
-python tv_organizer.py organize --dry-run
-python tv_organizer.py organize --execute
+python3 tv_organizer.py organize --dry-run
+python3 tv_organizer.py organize --execute
 ```
 
 ## Command Options
@@ -138,42 +138,42 @@ python tv_organizer.py organize --execute
 ### Quick Start
 ```bash
 # 1. Check status and configuration
-python tv_organizer.py status
-python tv_organizer.py config --show
+python3 tv_organizer.py status
+python3 tv_organizer.py config --show
 
 # 2. Scan for duplicates and generate report
-python tv_organizer.py duplicates --scan --report
+python3 tv_organizer.py duplicates --scan --report
 
 # 3. Check specific show
-python tv_organizer.py duplicates --show "Game of Thrones"
+python3 tv_organizer.py duplicates --show "Game of Thrones"
 ```
 
 ### Advanced Usage
 ```bash
 # Verbose scanning with custom output
-python tv_organizer.py --verbose duplicates --scan --report \
+python3 tv_organizer.py --verbose duplicates --scan --report \
   --output detailed_duplicates.txt
 
 # JSON report for processing
-python tv_organizer.py duplicates --scan --format json \
+python3 tv_organizer.py duplicates --scan --format json \
   --output duplicates_$(date +%Y%m%d).json
 
 # Scan specific directories only
-python tv_organizer.py duplicates --scan \
+python3 tv_organizer.py duplicates --scan \
   --directories "/mnt/qnap/plex/TV" "/mnt/qnap/Media/TV"
 ```
 
 ### Integration Examples
 ```bash
 # Generate daily duplicate report
-python tv_organizer.py duplicates --scan --format json \
+python3 tv_organizer.py duplicates --scan --format json \
   --output "reports/duplicates_$(date +%Y%m%d).json"
 
 # Check for duplicates of specific show after download
-python tv_organizer.py duplicates --show "The Mandalorian" --verbose
+python3 tv_organizer.py duplicates --show "The Mandalorian" --verbose
 
 # Quick statistics check
-python tv_organizer.py dup --stats
+python3 tv_organizer.py dup --stats
 ```
 
 ## Output Files
@@ -227,7 +227,7 @@ The TV organizer uses the existing configuration from:
 You can override the default directories using the `--directories` option:
 
 ```bash
-python tv_organizer.py duplicates --scan \
+python3 tv_organizer.py duplicates --scan \
   --directories "/path/to/tv1" "/path/to/tv2" "/path/to/tv3"
 ```
 
@@ -265,19 +265,19 @@ pwd
 # Should show: /home/noufal/personal_package
 
 # Check Python path
-python -c "import sys; print(sys.path)"
+python3 -c "import sys; print(sys.path)"
 ```
 
 #### No Episodes Found
 ```bash
 # Check configuration
-python tv_organizer.py config --show
+python3 tv_organizer.py config --show
 
 # Test with verbose logging
-python tv_organizer.py --verbose duplicates --scan
+python3 tv_organizer.py --verbose duplicates --scan
 
 # Try custom directories
-python tv_organizer.py duplicates --scan --directories "/your/tv/path"
+python3 tv_organizer.py duplicates --scan --directories "/your/tv/path"
 ```
 
 #### Large Scan Times
@@ -288,11 +288,11 @@ python tv_organizer.py duplicates --scan --directories "/your/tv/path"
 ### Debug Information
 ```bash
 # Enable verbose logging for troubleshooting
-python tv_organizer.py --verbose duplicates --scan
+python3 tv_organizer.py --verbose duplicates --scan
 
 # Check system status
-python tv_organizer.py status
-python tv_organizer.py config --show
+python3 tv_organizer.py status
+python3 tv_organizer.py config --show
 ```
 
 ## Performance Notes
@@ -346,7 +346,7 @@ The TV organizer is intentionally **separate** from the main `plex-cli` until al
 # Daily duplicate check script
 
 cd /home/noufal/personal_package
-python tv_organizer.py duplicates --scan --format json \
+python3 tv_organizer.py duplicates --scan --format json \
   --output "reports/duplicates_$(date +%Y%m%d).json"
 
 # Process results...
@@ -367,21 +367,21 @@ duplicates = detector.detect_duplicates()
 ### Getting Help
 ```bash
 # General help
-python tv_organizer.py --help
+python3 tv_organizer.py --help
 
 # Command-specific help  
-python tv_organizer.py duplicates --help
-python tv_organizer.py config --help
+python3 tv_organizer.py duplicates --help
+python3 tv_organizer.py config --help
 
 # Show current status
-python tv_organizer.py status
+python3 tv_organizer.py status
 ```
 
 ### Reporting Issues
 When reporting issues, include:
 1. Command that failed
 2. Error message
-3. Output from `python tv_organizer.py --verbose config --show`
+3. Output from `python3 tv_organizer.py --verbose config --show`
 4. OS and Python version
 
 ### Feature Requests
