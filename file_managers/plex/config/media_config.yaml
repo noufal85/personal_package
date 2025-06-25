@@ -35,17 +35,17 @@ movies:
 # TV Show Directory Configuration  
 tv:
   directories:
-    - path: "/mnt/qnap/plex/TV/"
-      description: "Primary TV directory"
-      windows_path: "\\\\192.168.1.27\\plex\\TV"
-      priority: 1
     - path: "/mnt/qnap/Media/TV/"
-      description: "Secondary TV directory"
+      description: "Primary TV directory (main location)"
       windows_path: "\\\\192.168.1.27\\Media\\TV" 
-      priority: 2
+      priority: 1
     - path: "/mnt/qnap/Multimedia/TV/"
-      description: "Tertiary TV directory"
+      description: "Secondary TV directory"
       windows_path: "\\\\192.168.1.27\\Multimedia\\TV"
+      priority: 2
+    - path: "/mnt/qnap/plex/TV/"
+      description: "Tertiary TV directory (full volume)"
+      windows_path: "\\\\192.168.1.27\\plex\\TV"
       priority: 3
 
 # Documentary Directory Configuration

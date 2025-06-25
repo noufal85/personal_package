@@ -1,0 +1,38 @@
+{
+  "session_id": "20250624_192124",
+  "timestamp": "2025-06-24T19:21:29.212566",
+  "dry_run": false,
+  "total_approved": 2,
+  "approved_moves": [
+    {
+      "source_path": "/mnt/qnap/plex/Movie/Sugar 2024 S01E06/Sugar.2024.S01E06.1080p.WEB.h264-ETHEL.mkv",
+      "target_path": "/mnt/qnap/Media/TV/Sugar (2024)/Season 1/Sugar.2024.S01E06.1080p.WEB.h264-ETHEL.mkv",
+      "move_type": "tv_episode_to_existing_show",
+      "operation_data": {
+        "source_path": "/mnt/qnap/plex/Movie/Sugar 2024 S01E06/Sugar.2024.S01E06.1080p.WEB.h264-ETHEL.mkv",
+        "target_path": "/mnt/qnap/Media/TV/",
+        "current_category": "movies",
+        "suggested_category": "TV",
+        "confidence": 0.9,
+        "reasoning": "TV Pattern: TV episode pattern detected: [Ss]\\d{1,2}[Ee]\\d{1,2}",
+        "file_size": 2727823685,
+        "file_size_readable": "2.5 GB"
+      }
+    },
+    {
+      "source_path": "/mnt/qnap/plex/Movie/Martha (2024)",
+      "target_path": "/mnt/qnap/Media/Documentary/Martha (2024)",
+      "move_type": "folder",
+      "operation_data": {
+        "source_path": "/mnt/qnap/plex/Movie/Martha (2024)/Martha (2024) 2160p AAC.mkv",
+        "target_path": "/mnt/qnap/Media/Documentary/",
+        "current_category": "movies",
+        "suggested_category": "documentaries",
+        "confidence": 0.95,
+        "reasoning": "Database Cache: TMDB verified: Documentary",
+        "file_size": 5588511307,
+        "file_size_readable": "5.2 GB"
+      }
+    }
+  ]
+}

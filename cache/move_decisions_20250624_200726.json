@@ -1,0 +1,68 @@
+{
+  "session_id": "20250624_200726",
+  "timestamp": "2025-06-24T20:10:50.081681",
+  "dry_run": false,
+  "total_approved": 4,
+  "approved_moves": [
+    {
+      "source_path": "/mnt/qnap/plex/Movie/Martha (2024)",
+      "target_path": "/mnt/qnap/Media/Documentary/Martha (2024)",
+      "move_type": "folder",
+      "operation_data": {
+        "source_path": "/mnt/qnap/plex/Movie/Martha (2024)/Martha (2024) 2160p AAC.mkv",
+        "target_path": "/mnt/qnap/Media/Documentary/",
+        "current_category": "movies",
+        "suggested_category": "documentaries",
+        "confidence": 0.95,
+        "reasoning": "Database Cache: TMDB verified: Documentary",
+        "file_size": 5588511307,
+        "file_size_readable": "5.2 GB"
+      }
+    },
+    {
+      "source_path": "/mnt/qnap/plex/Movie/13th (2016)",
+      "target_path": "/mnt/qnap/Media/Documentary/13th (2016)",
+      "move_type": "folder",
+      "operation_data": {
+        "source_path": "/mnt/qnap/plex/Movie/13th (2016)/13th (2016) 720p AAC.mp4",
+        "target_path": "/mnt/qnap/Media/Documentary/",
+        "current_category": "movies",
+        "suggested_category": "documentaries",
+        "confidence": 0.95,
+        "reasoning": "Database Cache: TMDB verified: Documentary",
+        "file_size": 931841515,
+        "file_size_readable": "888.7 MB"
+      }
+    },
+    {
+      "source_path": "/mnt/qnap/plex/Movie/Ramy Youssef - More Feelings (2024)",
+      "target_path": "/mnt/qnap/Media/standups/Ramy Youssef - More Feelings (2024)",
+      "move_type": "folder",
+      "operation_data": {
+        "source_path": "/mnt/qnap/plex/Movie/Ramy Youssef - More Feelings (2024)/Ramy Youssef - More Feelings (2024) 1080p AAC.mp4",
+        "target_path": "/mnt/qnap/Media/standups/",
+        "current_category": "movies",
+        "suggested_category": "standup",
+        "confidence": 0.9,
+        "reasoning": "Database Cache: TMDB verified: Comedy",
+        "file_size": 1076418124,
+        "file_size_readable": "1.0 GB"
+      }
+    },
+    {
+      "source_path": "/mnt/qnap/plex/Movie/The Fire Rises - The Creation and Impact of The Dark Knight Trilogy (2013)",
+      "target_path": "/mnt/qnap/Media/Documentary/The Fire Rises - The Creation and Impact of The Dark Knight Trilogy (2013)",
+      "move_type": "folder",
+      "operation_data": {
+        "source_path": "/mnt/qnap/plex/Movie/The Fire Rises - The Creation and Impact of The Dark Knight Trilogy (2013)/The Fire Rises - The Creation and Impact of The Dark Knight Trilogy (2013) 1080p AC3.mp4",
+        "target_path": "/mnt/qnap/Media/Documentary/",
+        "current_category": "movies",
+        "suggested_category": "documentaries",
+        "confidence": 0.95,
+        "reasoning": "Database Cache: TMDB verified: Documentary",
+        "file_size": 4825294887,
+        "file_size_readable": "4.5 GB"
+      }
+    }
+  ]
+}

@@ -39,6 +39,10 @@ Personal packages repository containing utility scripts and tools. Currently inc
 - `plex-cli files organize` - Auto-organize downloads (dry-run mode)
 - `plex-cli files organize --execute` - Actually organize files
 - `plex-cli files organize --no-ai` - Rule-based classification only
+- `plex-cli files reorganize` - Analyze misplaced media files (database-based)
+- `plex-cli files reorganize --ai` - Enhanced analysis with AI classification
+- `plex-cli files reorganize --rebuild-db` - Force database rebuild before analysis
+- `plex-cli files reorganize --no-external-apis` - Disable TMDB/TVDB usage
 
 **Movie Management:**
 - `plex-cli movies duplicates` - Find duplicate movies
@@ -88,6 +92,24 @@ Personal packages repository containing utility scripts and tools. Currently inc
 - Reports saved to `reports/` directory in both text and JSON formats
 - Includes duplicate analysis with space savings calculations and movie library inventory
 
+**Movie Quality Management:**
+- `plex-cli movies ratings --fetch` - Fetch OMDB ratings for all movies
+- `plex-cli movies ratings --stats` - Show rating database statistics
+- `plex-cli movies ratings --bad-movies` - List badly rated movies
+- `plex-cli movies ratings --delete-bad` - Delete badly rated movies (with confirmation)
+- `plex-cli movies ratings --imdb-threshold 4.0` - Set IMDB threshold for bad movies
+- `plex-cli movies ratings --rt-threshold 25` - Set Rotten Tomatoes threshold (default: 30%)
+- `plex-cli movies ratings --meta-threshold 35` - Set Metacritic threshold (default: 40)
+
+**OMDB Rating Features:**
+- Fetches IMDB, Rotten Tomatoes, and Metacritic ratings for movies
+- Caches ratings locally to avoid repeated API calls (30-day cache)
+- Calculates overall quality scores from multiple rating sources
+- Identifies badly rated movies based on configurable thresholds
+- Safe deletion with double confirmation for badly rated movies
+- Rate-limited API calls (10 requests/second) with retry logic
+- Comprehensive logging and progress tracking
+
 #### Plex TV Management
 
 **TV Show Analysis and Reports:**
@@ -134,6 +156,7 @@ Personal packages repository containing utility scripts and tools. Currently inc
   TVDB_API_KEY=your_tvdb_key_here
   AWS_ACCESS_KEY_ID=your_aws_key_here
   AWS_SECRET_ACCESS_KEY=your_aws_secret_here
+  OMDB_API_KEY=your_omdb_key_here
   ```
 
 **API Integration Notes:**
@@ -246,6 +269,47 @@ file_managers/
 - New show directory creation in appropriate TV base directories
 - Space management with 1GB safety buffer
 - Filename conflict resolution
+
+#### Media Reorganization Analyzer (NEW - Database-Based)
+
+**Intelligent Misplaced Media Detection:**
+- `plex-cli files reorganize` - Database-based analysis of misplaced files
+- `plex-cli files reorganize --ai` - Enhanced AI classification (OpenAI GPT-4o-mini)
+- `plex-cli files reorganize --rebuild-db` - Force database rebuild before analysis
+- `plex-cli files reorganize --no-external-apis` - Disable TMDB/TVDB integration
+- `plex-cli files reorganize --confidence 0.9` - High confidence threshold only
+- `plex-cli files reorganize --format json` - JSON output for automation
+
+**Reorganizer Features:**
+- **Database-Driven**: Uses existing media database for instant analysis (11,967+ files in seconds)
+- **Multi-Tier Classification**: AI → External APIs → Enhanced Rules with intelligent fallbacks
+- **Documentary Detection**: Advanced pattern recognition finds documentaries in movie folders
+- **Stand-up Comedy Detection**: Identifies comedy specials misplaced in TV/movie directories
+- **Parent Folder Analysis**: Uses TV show folder names for better external API results
+- **External API Integration**: TMDB/TVDB for verification and documentary detection
+- **Confidence Scoring**: Detailed confidence metrics with configurable thresholds
+- **Comprehensive Reporting**: Text and JSON reports with category transitions and space analysis
+
+**Performance Characteristics:**
+- **Database Loading**: 11,967 files in ~2 seconds (vs 5+ minutes directory scanning)
+- **Rule-Based Analysis**: ~12 seconds for full collection analysis
+- **AI Enhancement**: Limited to 50 files for testing (2s per file)
+- **Results**: Finds 485 misplaced files vs 107 with previous methods
+
+**API Usage:**
+- **OpenAI**: Intelligent filename classification with batch processing
+- **TMDB**: Movie verification and documentary genre detection
+- **TVDB**: TV show verification using parent folder names
+- **Rate Limiting**: Respects API quotas with exponential backoff
+
+**Categories Detected:**
+- Movies misplaced in TV folders
+- TV episodes in movie directories
+- Documentaries in regular movie folders
+- Stand-up comedy specials in wrong categories
+- Multi-part movies vs TV episodes
+
+**Documentation**: See `MEDIA_REORGANIZER_DOCUMENTATION.md` for detailed architecture, flowcharts, and usage examples.
 
 **Interactive Scripts:**
 - `run_movie_scanner.py` - Easy movie duplicate scanner launcher

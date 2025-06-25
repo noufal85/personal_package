@@ -1,0 +1,53 @@
+================================================================================
+MEDIA REORGANIZATION LOG ANALYSIS REPORT
+================================================================================
+Session ID: 20250622_234510
+Analysis Date: 2025-06-22 23:45:31
+
+SESSION OVERVIEW
+----------------------------------------
+Start Time: 2025-06-22 23:45:10
+End Time: 2025-06-22 23:45:11
+Duration: 0:00:01
+Total Files Processed: 11,967
+Misplaced Files Found: 485
+Misplacement Rate: 4.05%
+
+PERFORMANCE METRICS
+----------------------------------------
+Database Loading Time: 0.12 seconds
+Analysis Time: 1.02 seconds
+Report Generation Time: 0.00 seconds
+Total Time: 1.14 seconds
+Processing Rate: 11732.35 files/second
+
+CLASSIFICATION STATISTICS
+----------------------------------------
+Total Classifications: 11,967
+AI Classifications: 0
+API Classifications: 0
+Rule-based Classifications: 11,967
+  Average Time: 0.000s per file
+
+CATEGORY TRANSITION ANALYSIS
+----------------------------------------
+tv → standup: 244 files (129.8 GB)
+tv → documentaries: 177 files (83.5 GB)
+movies → tv: 26 files (79.8 GB)
+movies → standup: 17 files (38.5 GB)
+tv → movies: 11 files (0.0 GB)
+movies → documentaries: 10 files (30.8 GB)
+Total Data to Reorganize: 362.4 GB
+
+CONFIDENCE DISTRIBUTION
+----------------------------------------
+High (≥0.9): 206 files (42.5%)
+Medium-High (0.8-0.89): 260 files (53.6%)
+Medium (0.7-0.79): 19 files (3.9%)
+Low (<0.7): 0 files (0.0%)
+
+RECOMMENDATIONS
+----------------------------------------
+• Consider reviewing AI classification patterns - low success rate
+
+================================================================================

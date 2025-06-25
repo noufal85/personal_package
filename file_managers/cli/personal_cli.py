@@ -156,6 +156,66 @@ class PlexCLI:
             action='store_true',
             help='Only verify mount access and exit'
         )
+        
+        # files reorganize command (MVP)
+        reorganize_parser = files_subparsers.add_parser(
+            'reorganize',
+            help='Analyze misplaced media files (MVP)',
+            description='Identify files in wrong directories using rule-based analysis'
+        )
+        reorganize_parser.add_argument(
+            '--confidence',
+            type=float,
+            default=0.7,
+            help='Minimum confidence threshold (0.0-1.0, default: 0.7)'
+        )
+        reorganize_parser.add_argument(
+            '--format',
+            choices=['text', 'json', 'both'],
+            default='both',
+            help='Report output format (default: both)'
+        )
+        reorganize_parser.add_argument(
+            '--ai',
+            action='store_true',
+            help='Enable AI classification (can detect documentaries and edge cases)'
+        )
+        reorganize_parser.add_argument(
+            '--rebuild-db',
+            action='store_true',
+            help='Force database rebuild before analysis'
+        )
+        reorganize_parser.add_argument(
+            '--no-external-apis',
+            action='store_true',
+            help='Disable external API usage (TMDB/TVDB)'
+        )
+        
+        # files move command
+        move_parser = files_subparsers.add_parser(
+            'move',
+            help='Interactive file moving with caching support',
+            description='Move misplaced files with decision caching and batch execution'
+        )
+        move_parser.add_argument(
+            'report',
+            nargs='?',
+            help='Path to reorganization JSON report file (from files reorganize command)'
+        )
+        move_parser.add_argument(
+            '--dry-run',
+            action='store_true',
+            help='Preview moves without actually moving files'
+        )
+        move_parser.add_argument(
+            '--execute-cache',
+            help='Execute moves from a cached decisions file'
+        )
+        move_parser.add_argument(
+            '--list-cache',
+            action='store_true',
+            help='List available cached decision files'
+        )
     
     def _add_movies_commands(self, subparsers) -> None:
         """Add movies command group."""
@@ -201,6 +261,51 @@ class PlexCLI:
         
         # movies reports command
         movies_subparsers.add_parser('reports', help='Generate comprehensive movie collection reports')
+        
+        # movies ratings command
+        ratings_parser = movies_subparsers.add_parser(
+            'ratings',
+            help='Fetch and manage movie ratings from OMDB',
+            description='Fetch ratings from OMDB API and manage movie quality database'
+        )
+        ratings_parser.add_argument(
+            '--fetch',
+            action='store_true',
+            help='Fetch ratings for all movies from OMDB API'
+        )
+        ratings_parser.add_argument(
+            '--stats',
+            action='store_true',
+            help='Show rating database statistics'
+        )
+        ratings_parser.add_argument(
+            '--bad-movies',
+            action='store_true',
+            help='List badly rated movies based on thresholds'
+        )
+        ratings_parser.add_argument(
+            '--delete-bad',
+            action='store_true',
+            help='Delete badly rated movies (requires confirmation)'
+        )
+        ratings_parser.add_argument(
+            '--imdb-threshold',
+            type=float,
+            default=5.0,
+            help='IMDB rating threshold for bad movies (default: 5.0)'
+        )
+        ratings_parser.add_argument(
+            '--rt-threshold',
+            type=int,
+            default=30,
+            help='Rotten Tomatoes threshold for bad movies (default: 30%%)'
+        )
+        ratings_parser.add_argument(
+            '--meta-threshold',
+            type=int,
+            default=40,
+            help='Metacritic threshold for bad movies (default: 40)'
+        )
     
     def _add_tv_commands(self, subparsers) -> None:
         """Add TV command group."""
@@ -332,6 +437,33 @@ class PlexCLI:
         
         # media status command
         media_subparsers.add_parser('status', help='System status and mount point verification')
+        
+        # media enrich command
+        enrich_parser = media_subparsers.add_parser(
+            'enrich',
+            help='Enrich metadata using external APIs',
+            description='Query TMDB/TVDB APIs to enrich media metadata and improve classification accuracy'
+        )
+        enrich_parser.add_argument(
+            '--limit',
+            type=int,
+            help='Limit number of items to process'
+        )
+        enrich_parser.add_argument(
+            '--force',
+            action='store_true',
+            help='Force re-enrichment of cached items'
+        )
+        enrich_parser.add_argument(
+            '--stats',
+            action='store_true',
+            help='Show metadata cache statistics'
+        )
+        enrich_parser.add_argument(
+            '--test',
+            type=str,
+            help='Test enrichment for a specific title'
+        )
     
     def _add_config_commands(self, subparsers) -> None:
         """Add config command group."""
@@ -475,6 +607,10 @@ Version: """ + __version__
             return self._handle_files_database(args)
         elif args.files_command == 'organize':
             return self._handle_files_organize(args)
+        elif args.files_command == 'reorganize':
+            return self._handle_files_reorganize(args)
+        elif args.files_command == 'move':
+            return self._handle_files_move(args)
         else:
             print(f"Unknown files command: {args.files_command}", file=sys.stderr)
             return 1
@@ -655,6 +791,147 @@ Version: """ + __version__
             return 1
         except Exception as e:
             print(f"❌ Error during organization: {e}")
+            return 1
+    
+    def _handle_files_reorganize(self, args) -> int:
+        """Handle files reorganize command (MVP)."""
+        try:
+            from ..plex.utils.media_reorganizer import MediaReorganizationAnalyzer
+            
+            # Get parameters from args
+            confidence = getattr(args, 'confidence', 0.7)
+            output_format = getattr(args, 'format', 'both')
+            rebuild_db = getattr(args, 'rebuild_db', False)
+            
+            print("🔍 Media Reorganization Analysis")
+            print("=" * 35)
+            print("• Process: TV/Movie Database Cache → AI LLM → Unclassified")
+            print("• Analysis only - generates actionable reports for moves")
+            print(f"• Output format: {output_format}")
+            print()
+            
+            # Always use strict workflow (AI enabled by default)
+            analyzer = MediaReorganizationAnalyzer(
+                rebuild_db=rebuild_db,
+                min_confidence=confidence,
+                output_format=output_format,
+                use_ai=True,  # Always enabled for strict workflow
+                use_external_apis=True  # Always enabled for strict workflow
+            )
+            
+            # Run analysis
+            return analyzer.run_analysis(args)
+            
+        except ImportError as e:
+            print(f"❌ Media reorganizer not available: {e}")
+            print("   Make sure the media_reorganizer module is properly installed.")
+            return 1
+        except Exception as e:
+            print(f"❌ Error during reorganization analysis: {e}")
+            return 1
+    
+    def _handle_files_move(self, args) -> int:
+        """Handle files move command for interactive file moving."""
+        try:
+            from ..plex.utils.media_mover import MediaMover
+            from pathlib import Path
+            
+            # Handle cache listing
+            if args.list_cache:
+                return self._list_cached_decisions()
+            
+            # Initialize mover
+            mover = MediaMover(dry_run=args.dry_run)
+            
+            # Handle cache execution
+            if args.execute_cache:
+                print("🚚 Media File Mover - Cache Execution")
+                print("=" * 45)
+                print("• Execute previously approved moves")
+                print(f"• Cache file: {args.execute_cache}")
+                print(f"• Mode: {'DRY RUN' if args.dry_run else 'LIVE MOVES'}")
+                print()
+                
+                success = mover.execute_cached_moves(args.execute_cache)
+                return 0 if success else 1
+            
+            # Handle interactive mode
+            if not args.report:
+                print("❌ No report file specified")
+                print("   Use --help for usage information")
+                return 1
+            
+            print("🚚 Interactive Media File Mover")
+            print("=" * 35)
+            print("• Decision phase: Approve moves for batch execution")
+            print("• Caching: Approved moves saved for execution")
+            print(f"• Report: {args.report}")
+            print(f"• Mode: {'DRY RUN' if args.dry_run else 'LIVE MOVES'}")
+            print()
+            
+            # Run interactive moves
+            success = mover.run_interactive_moves(args.report)
+            return 0 if success else 1
+            
+        except ImportError as e:
+            print(f"❌ Media mover not available: {e}")
+            print("   Make sure the media_mover module is properly installed.")
+            return 1
+        except Exception as e:
+            print(f"❌ Error during move operation: {e}")
+            return 1
+    
+    def _list_cached_decisions(self) -> int:
+        """List available cached decision files."""
+        try:
+            from pathlib import Path
+            import json
+            from datetime import datetime
+            
+            cache_dir = Path("cache")
+            if not cache_dir.exists():
+                print("❌ No cache directory found")
+                return 1
+            
+            cache_files = list(cache_dir.glob("move_decisions_*.json"))
+            if not cache_files:
+                print("❌ No cached decision files found")
+                return 1
+            
+            print("🗃️ Cached Decision Files")
+            print("=" * 30)
+            
+            for cache_file in sorted(cache_files, reverse=True):
+                try:
+                    with open(cache_file, 'r') as f:
+                        cache_data = json.load(f)
+                    
+                    session_id = cache_data.get('session_id', 'Unknown')
+                    timestamp = cache_data.get('timestamp', 'Unknown')
+                    total_moves = cache_data.get('total_approved', 0)
+                    
+                    # Parse timestamp for display
+                    try:
+                        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                        time_str = dt.strftime('%Y-%m-%d %H:%M:%S')
+                    except:
+                        time_str = timestamp
+                    
+                    print(f"📄 {cache_file.name}")
+                    print(f"   Session: {session_id}")
+                    print(f"   Created: {time_str}")
+                    print(f"   Moves: {total_moves}")
+                    print(f"   Path: {cache_file}")
+                    print()
+                    
+                except Exception as e:
+                    print(f"❌ Error reading {cache_file}: {e}")
+            
+            print("Usage: plex-cli files move --execute-cache <cache_file>")
+            return 0
+            
+        except Exception as e:
+            print(f"❌ Error listing cache files: {e}")
             return 1
     
     def _handle_config_command(self, args) -> int:
@@ -908,6 +1185,8 @@ Version: """ + __version__
             return self._handle_movies_search(args)
         elif args.movies_command == 'reports':
             return self._handle_movies_reports(args)
+        elif args.movies_command == 'ratings':
+            return self._handle_movies_ratings(args)
         else:
             print(f"Unknown movies command: {args.movies_command}", file=sys.stderr)
             return 1
@@ -942,6 +1221,8 @@ Version: """ + __version__
             return self._handle_media_database(args)
         elif args.media_command == 'status':
             return self._handle_media_status(args)
+        elif args.media_command == 'enrich':
+            return self._handle_media_enrich(args)
         else:
             print(f"Unknown media command: {args.media_command}", file=sys.stderr)
             return 1
@@ -1004,6 +1285,8 @@ Version: """ + __version__
             print("1. Find duplicate movies/TV episodes")
             print("2. Database management")
             print("3. Auto-organize downloaded files")
+            print("4. Analyze misplaced media files (MVP)")
+            print("5. Move misplaced files interactively")
             print("b. Back to main menu")
             print("q. Quit")
             print()
@@ -1022,6 +1305,10 @@ Version: """ + __version__
                 self._interactive_files_database()
             elif choice == '3':
                 self._interactive_files_organize()
+            elif choice == '4':
+                self._interactive_files_reorganize()
+            elif choice == '5':
+                self._interactive_files_move()
             else:
                 print("❌ Invalid choice. Please try again.")
             print()
@@ -1035,10 +1322,18 @@ Version: """ + __version__
             print("1. Search all (movies + TV)")
             print("2. Search movies only")
             print("3. Search TV episodes only")
+            print("b. Back to files menu")
+            print("q. Quit")
             print()
             
-            choice = input("Select search type (1-3): ").strip()
+            choice = input("Select search type (1-3, b, q): ").strip().lower()
             print()
+            
+            if choice == 'b':
+                return
+            elif choice == 'q':
+                print("Goodbye! 👋")
+                sys.exit(0)
             
             type_map = {
                 '1': 'all',
@@ -1048,17 +1343,21 @@ Version: """ + __version__
             
             search_type = type_map.get(choice, 'all')
             
-            # Ask about rebuilding database
-            rebuild = input("Rebuild database before searching? (y/n): ").strip().lower() == 'y'
-            print()
-            
-            # Create mock args object
-            class MockArgs:
-                def __init__(self):
-                    self.type = search_type
-                    self.rebuild_db = rebuild
-            
-            self._handle_files_duplicates(MockArgs())
+            if choice in type_map:
+                # Ask about rebuilding database
+                rebuild = input("Rebuild database before searching? (y/n): ").strip().lower() == 'y'
+                print()
+                
+                # Create mock args object
+                class MockArgs:
+                    def __init__(self):
+                        self.type = search_type
+                        self.rebuild_db = rebuild
+                
+                self._handle_files_duplicates(MockArgs())
+            else:
+                print("❌ Invalid choice. Please try again.")
+                
             input("\nPress Enter to continue...")
             
         except Exception as e:
@@ -1072,10 +1371,18 @@ Version: """ + __version__
             print("-" * 20)
             print("1. Show database status")
             print("2. Rebuild database")
+            print("b. Back to main menu")
+            print("q. Quit")
             print()
             
-            choice = input("Select operation (1-2): ").strip()
+            choice = input("Select operation (1-2, b, q): ").strip().lower()
             print()
+            
+            if choice == 'b':
+                return
+            elif choice == 'q':
+                print("Goodbye! 👋")
+                sys.exit(0)
             
             # Create mock args object
             class MockArgs:
@@ -1087,11 +1394,12 @@ Version: """ + __version__
                         self.status = False
                         self.rebuild = True
                     else:
-                        self.status = True
-                        self.rebuild = False
+                        print("❌ Invalid choice. Please try again.")
+                        return
             
-            self._handle_files_database(MockArgs())
-            input("\nPress Enter to continue...")
+            if choice in ['1', '2']:
+                self._handle_files_database(MockArgs())
+                input("\nPress Enter to continue...")
             
         except Exception as e:
             print(f"❌ Error: {e}")
@@ -1105,10 +1413,18 @@ Version: """ + __version__
             print("1. Preview mode (show what would be moved)")
             print("2. Execution mode (actually move files)")
             print("3. Verify mount access only")
+            print("b. Back to main menu")
+            print("q. Quit")
             print()
             
-            choice = input("Select mode (1-3): ").strip()
+            choice = input("Select mode (1-3, b, q): ").strip().lower()
             print()
+            
+            if choice == 'b':
+                return
+            elif choice == 'q':
+                print("Goodbye! 👋")
+                sys.exit(0)
             
             if choice == '3':
                 # Verify mounts only
@@ -1121,19 +1437,119 @@ Version: """ + __version__
                 self._handle_files_organize(MockArgs())
                 input("\nPress Enter to continue...")
                 return
+            elif choice in ['1', '2']:
+                # Ask about AI classification
+                use_ai = input("Use AI classification? (y/n): ").strip().lower() == 'y'
+                print()
+                
+                # Create mock args object
+                class MockArgs:
+                    def __init__(self):
+                        self.execute = choice == '2'
+                        self.no_ai = not use_ai
+                        self.verify_mounts = False
+                
+                self._handle_files_organize(MockArgs())
+                input("\nPress Enter to continue...")
+            else:
+                print("❌ Invalid choice. Please try again.")
+                input("\nPress Enter to continue...")
             
-            # Ask about AI classification
-            use_ai = input("Use AI classification? (y/n): ").strip().lower() == 'y'
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            input("\nPress Enter to continue...")
+    
+    def _interactive_files_reorganize(self) -> None:
+        """Interactive reorganization analysis with unified workflow."""
+        try:
+            print("🔍 Media Reorganization Analysis")
+            print("-" * 35)
+            print("This will analyze your media directories for misplaced files.")
+            print("• Process: TV/Movie Database Cache → AI → Unclassified")
+            print("• Generates actionable reports with move commands")
+            print("• Analysis only - no files will be moved")
             print()
             
-            # Create mock args object
+            # No options - use fixed confidence threshold
+            confidence = 0.7  # Fixed threshold
+            
+            print(f"\n🚀 Starting analysis: Database Cache → AI → Unclassified...")
+            print()
+            
+            # Create mock args and run analysis
             class MockArgs:
                 def __init__(self):
-                    self.execute = choice == '2'
-                    self.no_ai = not use_ai
-                    self.verify_mounts = False
+                    self.confidence = confidence
+                    self.format = 'both'
+                    # Unified workflow always uses AI and external APIs
+                    self.ai = True
+                    self.no_external_apis = False
+                    self.rebuild_db = False
             
-            self._handle_files_organize(MockArgs())
+            self._handle_files_reorganize(MockArgs())
+            input("\nPress Enter to continue...")
+            
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            input("\nPress Enter to continue...")
+    
+    def _interactive_files_move(self) -> None:
+        """Interactive file moving command."""
+        try:
+            print("🚚 Interactive File Mover")
+            print("-" * 25)
+            print("Move misplaced files based on reorganization analysis")
+            print()
+            
+            # Check for latest report
+            latest_report = Path("reports/media_reorganization_latest.json")
+            
+            if not latest_report.exists():
+                print("❌ No reorganization analysis found!")
+                print("   Please run option 4 (Analyze misplaced media files) first.")
+                input("\nPress Enter to continue...")
+                return
+            
+            # Show latest report info
+            try:
+                import json
+                with open(latest_report, 'r') as f:
+                    report_data = json.load(f)
+                
+                report_time = report_data.get('report_metadata', {}).get('timestamp', 'Unknown')
+                total_files = report_data.get('execution_summary', {}).get('total_misplaced_files', 0)
+                
+                print(f"📊 Using latest analysis:")
+                print(f"   Report generated: {report_time}")
+                print(f"   Misplaced files found: {total_files}")
+                
+                if total_files == 0:
+                    print("✅ No files need to be moved!")
+                    input("\nPress Enter to continue...")
+                    return
+                
+            except Exception:
+                print("⚠️  Using latest report (couldn't read details)")
+            
+            print()
+            
+            # Ask for dry run mode
+            dry_run_choice = input("Run in dry-run mode? (y/n - default: y): ").strip().lower()
+            dry_run = dry_run_choice != 'n'
+            
+            print()
+            print(f"🚀 Starting {'DRY RUN' if dry_run else 'LIVE'} move operation...")
+            print()
+            
+            # Create mock args and run move
+            class MockArgs:
+                def __init__(self):
+                    self.report = str(latest_report)
+                    self.dry_run = dry_run
+                    self.execute_cache = None
+                    self.list_cache = False
+            
+            self._handle_files_move(MockArgs())
             input("\nPress Enter to continue...")
             
         except Exception as e:
@@ -1148,6 +1564,7 @@ Version: """ + __version__
             print("1. Find duplicate movies")
             print("2. Search movie collection")
             print("3. Generate movie reports")
+            print("4. Fetch and manage movie ratings")
             print("b. Back to main menu")
             print("q. Quit")
             print()
@@ -1166,6 +1583,8 @@ Version: """ + __version__
                 self._interactive_movies_search()
             elif choice == '3':
                 self._interactive_movies_reports()
+            elif choice == '4':
+                self._handle_ratings_interactive()
             else:
                 print("❌ Invalid choice. Please try again.")
             print()
@@ -1211,6 +1630,7 @@ Version: """ + __version__
             print("1. AI-powered media assistant")
             print("2. Database management")
             print("3. System status check")
+            print("4. Metadata enrichment")
             print("b. Back to main menu")
             print("q. Quit")
             print()
@@ -1229,6 +1649,8 @@ Version: """ + __version__
                 self._interactive_media_database()
             elif choice == '3':
                 self._interactive_media_status()
+            elif choice == '4':
+                self._interactive_media_enrich()
             else:
                 print("❌ Invalid choice. Please try again.")
             print()
@@ -1272,10 +1694,18 @@ Version: """ + __version__
         print("3. Movie directories")
         print("4. TV directories")
         print("5. Settings")
+        print("b. Back to config menu")
+        print("q. Quit")
         print()
         
-        choice = input("Select section (1-5): ").strip()
+        choice = input("Select section (1-5, b, q): ").strip().lower()
         print()
+        
+        if choice == 'b':
+            return
+        elif choice == 'q':
+            print("Goodbye! 👋")
+            sys.exit(0)
         
         section_map = {
             '1': 'all',
@@ -1287,12 +1717,16 @@ Version: """ + __version__
         
         section = section_map.get(choice, 'all')
         
-        # Create mock args object
-        class MockArgs:
-            def __init__(self):
-                self.section = section
+        if choice in section_map:
+            # Create mock args object
+            class MockArgs:
+                def __init__(self):
+                    self.section = section
+            
+            self._handle_config_show(MockArgs())
+        else:
+            print("❌ Invalid choice. Please try again.")
         
-        self._handle_config_show(MockArgs())
         input("\nPress Enter to continue...")
     
     def _interactive_config_paths(self) -> None:
@@ -1303,10 +1737,18 @@ Version: """ + __version__
         print("2. Movie paths")
         print("3. TV paths")
         print("4. Download paths")
+        print("b. Back to config menu")
+        print("q. Quit")
         print()
         
-        choice = input("Select path type (1-4): ").strip()
+        choice = input("Select path type (1-4, b, q): ").strip().lower()
         print()
+        
+        if choice == 'b':
+            return
+        elif choice == 'q':
+            print("Goodbye! 👋")
+            sys.exit(0)
         
         type_map = {
             '1': 'all',
@@ -1317,12 +1759,16 @@ Version: """ + __version__
         
         path_type = type_map.get(choice, 'all')
         
-        # Create mock args object
-        class MockArgs:
-            def __init__(self):
-                self.type = path_type
-        
-        self._handle_config_paths(MockArgs())
+        if choice in type_map:
+            # Create mock args object
+            class MockArgs:
+                def __init__(self):
+                    self.type = path_type
+            
+            self._handle_config_paths(MockArgs())
+        else:
+            print("❌ Invalid choice. Please try again.")
+            
         input("\nPress Enter to continue...")
     
     def _interactive_config_apis(self) -> None:
@@ -1603,10 +2049,15 @@ Version: """ + __version__
             print("1. Show database status")
             print("2. Rebuild database")
             print("3. Clean database (remove file)")
+            print("b. Back to media menu")
             print()
             
-            choice = input("Select operation (1-3): ").strip()
+            choice = input("Select operation (1-3, b): ").strip().lower()
             print()
+            
+            # Handle back option
+            if choice in ['b', 'back']:
+                return
             
             # Create mock args object
             class MockArgs:
@@ -1624,9 +2075,9 @@ Version: """ + __version__
                         self.rebuild = False
                         self.clean = True
                     else:
-                        self.status = True
-                        self.rebuild = False
-                        self.clean = False
+                        print("Invalid choice. Please select 1-3 or b.")
+                        input("Press Enter to continue...")
+                        return
             
             self._handle_media_database(MockArgs())
             input("\nPress Enter to continue...")
@@ -1657,6 +2108,122 @@ Version: """ + __version__
                 pass
             
             self._handle_media_status(MockArgs())
+            input("\nPress Enter to continue...")
+            
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            input("\nPress Enter to continue...")
+    
+    def _interactive_media_enrich(self) -> None:
+        """Interactive metadata enrichment."""
+        try:
+            print("🎬 Metadata Enrichment Tool")
+            print("-" * 30)
+            print("This tool queries external APIs (TMDB, TVDB) to enrich your media")
+            print("database with accurate metadata for improved classification.")
+            print()
+            print("Features:")
+            print("• Identifies documentaries, stand-up comedy, and other genres")
+            print("• Improves reorganization accuracy")
+            print("• Caches results to avoid repeated API calls")
+            print()
+            
+            # Show current cache stats
+            try:
+                from ..plex.utils.metadata_enrichment import MetadataEnricher
+                enricher = MetadataEnricher()
+                stats = enricher.cache.get_stats()
+                if stats['total_items'] > 0:
+                    print(f"📊 Current cache: {stats['total_items']} items")
+                    print(f"   By type: {dict(stats['by_type'])}")
+                    print()
+            except:
+                pass
+            
+            print("Options:")
+            print("1. View cache statistics")
+            print("2. Test single title enrichment")
+            print("3. Enrich sample (10 items)")
+            print("4. Full enrichment (all items)")
+            print("5. Force re-enrichment (cached items)")
+            print("b. Back to media menu")
+            print("q. Quit")
+            print()
+            
+            choice = input("Select option (1-5, b, q): ").strip().lower()
+            print()
+            
+            if choice == 'b':
+                return
+            elif choice == 'q':
+                print("Goodbye! 👋")
+                sys.exit(0)
+            
+            if choice == '1':
+                # Show stats
+                class MockArgs:
+                    def __init__(self):
+                        self.stats = True
+                        self.test = None
+                        self.limit = None
+                        self.force = False
+                
+                self._handle_media_enrich(MockArgs())
+                
+            elif choice == '2':
+                # Test single title
+                title = input("Enter filename to test: ").strip()
+                if title:
+                    class MockArgs:
+                        def __init__(self):
+                            self.stats = False
+                            self.test = title
+                            self.limit = None
+                            self.force = False
+                    
+                    self._handle_media_enrich(MockArgs())
+                else:
+                    print("❌ Title cannot be empty")
+                
+            elif choice == '3':
+                # Sample enrichment
+                class MockArgs:
+                    def __init__(self):
+                        self.stats = False
+                        self.test = None
+                        self.limit = 10
+                        self.force = False
+                
+                self._handle_media_enrich(MockArgs())
+                
+            elif choice == '4':
+                # Full enrichment
+                class MockArgs:
+                    def __init__(self):
+                        self.stats = False
+                        self.test = None
+                        self.limit = None
+                        self.force = False
+                
+                self._handle_media_enrich(MockArgs())
+                
+            elif choice == '5':
+                # Force re-enrichment
+                limit = input("Enter limit (or press Enter for all): ").strip()
+                limit_val = int(limit) if limit.isdigit() else None
+                
+                class MockArgs:
+                    def __init__(self):
+                        self.stats = False
+                        self.test = None
+                        self.limit = limit_val
+                        self.force = True
+                
+                self._handle_media_enrich(MockArgs())
+                
+            else:
+                print("❌ Invalid choice")
+                
             input("\nPress Enter to continue...")
             
         except Exception as e:
@@ -1896,6 +2463,285 @@ Version: """ + __version__
         except Exception as e:
             print(f"❌ Error generating reports: {e}")
             return 1
+    
+    def _handle_movies_ratings(self, args) -> int:
+        """Handle movies ratings command."""
+        try:
+            from ..plex.utils.omdb_rating_fetcher import OMDBRatingFetcher, OMDBRatingDatabase
+            
+            # Handle different rating operations
+            if args.stats:
+                return self._handle_ratings_stats()
+            elif args.fetch:
+                return self._handle_ratings_fetch()
+            elif args.bad_movies:
+                return self._handle_ratings_bad_movies(args)
+            elif args.delete_bad:
+                return self._handle_ratings_delete_bad(args)
+            else:
+                # Interactive mode
+                return self._handle_ratings_interactive()
+                
+        except ImportError as e:
+            print(f"❌ OMDB rating fetcher not available: {e}")
+            return 1
+        except Exception as e:
+            print(f"❌ Error with ratings command: {e}")
+            return 1
+    
+    def _handle_ratings_stats(self) -> int:
+        """Show rating database statistics."""
+        try:
+            from ..plex.utils.omdb_rating_fetcher import OMDBRatingDatabase
+            
+            print("📊 Movie Ratings Database Statistics")
+            print("=" * 40)
+            
+            db = OMDBRatingDatabase()
+            stats = db.get_stats()
+            
+            print(f"Total movies with ratings: {stats['total_movies']:,}")
+            print(f"Movies with IMDB ratings: {stats['with_imdb_rating']:,}")
+            print(f"Movies with Rotten Tomatoes: {stats['with_rotten_tomatoes']:,}")
+            print(f"Movies with Metacritic: {stats['with_metacritic']:,}")
+            
+            if stats['average_imdb_rating']:
+                print(f"Average IMDB rating: {stats['average_imdb_rating']}/10")
+            
+            print(f"Database location: {stats['database_path']}")
+            
+            return 0
+            
+        except Exception as e:
+            print(f"❌ Error showing stats: {e}")
+            return 1
+    
+    def _handle_ratings_fetch(self) -> int:
+        """Fetch ratings for all movies."""
+        try:
+            from ..plex.utils.omdb_rating_fetcher import OMDBRatingFetcher
+            from ..plex.utils.media_database import MediaDatabase
+            
+            print("🎬 Fetching Movie Ratings from OMDB")
+            print("=" * 40)
+            
+            # Load movie database
+            db = MediaDatabase()
+            if not db.is_current():
+                print("⚠️  Movie database is outdated")
+                rebuild = input("Rebuild database first? (y/n): ").strip().lower()
+                if rebuild == 'y':
+                    print("🔄 Rebuilding database...")
+                    db.rebuild_database()
+                    print("✅ Database rebuilt")
+            
+            # Get movies
+            movies = db.get_movies()
+            print(f"📽️  Found {len(movies)} movies to process")
+            print()
+            
+            # Initialize fetcher
+            fetcher = OMDBRatingFetcher()
+            
+            # Progress callback
+            def progress_callback(current, total, filename):
+                print(f"   📊 Processing {current}/{total}: {filename}")
+            
+            # Fetch ratings
+            summary = fetcher.fetch_ratings_for_movies(movies, progress_callback)
+            
+            # Show summary
+            print(f"\\n✅ Rating fetch completed!")
+            print(f"   📊 Processed: {summary['processed']}/{summary['total_movies']} movies")
+            print(f"   📈 Success rate: {summary['success_rate']:.1f}%")
+            print(f"   🔄 API calls: {summary['stats']['api_calls']}")
+            print(f"   💾 Cache hits: {summary['stats']['cache_hits']}")
+            print(f"   📄 Log file: {summary['log_file']}")
+            
+            return 0
+            
+        except Exception as e:
+            print(f"❌ Error fetching ratings: {e}")
+            return 1
+    
+    def _handle_ratings_bad_movies(self, args) -> int:
+        """List badly rated movies."""
+        try:
+            from ..plex.utils.omdb_rating_fetcher import OMDBRatingDatabase
+            
+            print("📉 Badly Rated Movies")
+            print("=" * 25)
+            print(f"Thresholds: IMDB < {args.imdb_threshold}, RT < {args.rt_threshold}%, Metacritic < {args.meta_threshold}")
+            print()
+            
+            db = OMDBRatingDatabase()
+            bad_movies = db.get_badly_rated_movies(
+                args.imdb_threshold,
+                args.rt_threshold, 
+                args.meta_threshold
+            )
+            
+            if not bad_movies:
+                print("✅ No badly rated movies found!")
+                return 0
+            
+            print(f"Found {len(bad_movies)} badly rated movies:")
+            print()
+            
+            total_size = 0
+            for i, movie in enumerate(bad_movies, 1):
+                print(f"{i}. {movie.title} ({movie.year or 'Unknown'})")
+                print(f"   IMDB: {movie.imdb_rating or 'N/A'}/10")
+                print(f"   Rotten Tomatoes: {movie.rotten_tomatoes or 'N/A'}%")
+                print(f"   Metacritic: {movie.metacritic or 'N/A'}/100")
+                print(f"   Quality Score: {movie.get_quality_score():.1f}/100")
+                print(f"   Size: {movie._format_file_size(movie.file_size)}")
+                print(f"   Path: {movie.file_path}")
+                print()
+                total_size += movie.file_size
+            
+            print(f"💾 Total size of badly rated movies: {self._format_file_size(total_size)}")
+            
+            return 0
+            
+        except Exception as e:
+            print(f"❌ Error listing bad movies: {e}")
+            return 1
+    
+    def _handle_ratings_delete_bad(self, args) -> int:
+        """Delete badly rated movies with confirmation."""
+        try:
+            from ..plex.utils.omdb_rating_fetcher import OMDBRatingDatabase
+            import os
+            
+            print("🗑️  Delete Badly Rated Movies")
+            print("=" * 30)
+            print(f"Thresholds: IMDB < {args.imdb_threshold}, RT < {args.rt_threshold}%, Metacritic < {args.meta_threshold}")
+            print()
+            
+            db = OMDBRatingDatabase()
+            bad_movies = db.get_badly_rated_movies(
+                args.imdb_threshold,
+                args.rt_threshold,
+                args.meta_threshold
+            )
+            
+            if not bad_movies:
+                print("✅ No badly rated movies found!")
+                return 0
+            
+            # Show movies to be deleted
+            total_size = sum(movie.file_size for movie in bad_movies)
+            print(f"⚠️  {len(bad_movies)} movies marked for deletion:")
+            for movie in bad_movies[:10]:  # Show first 10
+                print(f"   • {movie.title} ({movie.year}) - Quality: {movie.get_quality_score():.1f}/100")
+            
+            if len(bad_movies) > 10:
+                print(f"   ... and {len(bad_movies) - 10} more movies")
+            
+            print(f"\\n💾 Total space to be freed: {self._format_file_size(total_size)}")
+            print()
+            
+            # Confirmation
+            print("⚠️  THIS WILL PERMANENTLY DELETE THESE MOVIE FILES!")
+            confirm1 = input("Type 'DELETE BADLY RATED MOVIES' to confirm: ").strip()
+            
+            if confirm1 != "DELETE BADLY RATED MOVIES":
+                print("❌ Deletion cancelled - confirmation text didn't match")
+                return 0
+            
+            confirm2 = input("Are you absolutely sure? (yes/no): ").strip().lower()
+            if confirm2 != "yes":
+                print("❌ Deletion cancelled")
+                return 0
+            
+            # Delete files
+            deleted_count = 0
+            deleted_size = 0
+            failed_deletions = []
+            
+            print(f"\\n🗑️  Deleting {len(bad_movies)} badly rated movies...")
+            
+            for movie in bad_movies:
+                try:
+                    if os.path.exists(movie.file_path):
+                        file_size = os.path.getsize(movie.file_path)
+                        os.remove(movie.file_path)
+                        print(f"   ✅ Deleted: {movie.title}")
+                        deleted_count += 1
+                        deleted_size += file_size
+                    else:
+                        print(f"   ⚠️  File not found: {movie.title}")
+                except Exception as e:
+                    print(f"   ❌ Failed to delete {movie.title}: {e}")
+                    failed_deletions.append(movie.title)
+            
+            # Summary
+            print(f"\\n📊 Deletion Summary:")
+            print(f"   ✅ Successfully deleted: {deleted_count} movies")
+            print(f"   💾 Space freed: {self._format_file_size(deleted_size)}")
+            if failed_deletions:
+                print(f"   ❌ Failed deletions: {len(failed_deletions)}")
+            
+            return 0
+            
+        except Exception as e:
+            print(f"❌ Error deleting bad movies: {e}")
+            return 1
+    
+    def _handle_ratings_interactive(self) -> int:
+        """Interactive ratings menu."""
+        while True:
+            print("🎬 Movie Ratings Menu")
+            print("-" * 20)
+            print("1. Fetch ratings from OMDB")
+            print("2. Show database statistics")  
+            print("3. List badly rated movies")
+            print("4. Delete badly rated movies")
+            print("b. Back to movies menu")
+            print("q. Quit")
+            print()
+            
+            choice = input("Select option (1-4, b, q): ").strip().lower()
+            
+            if choice == 'b':
+                return 0
+            elif choice == 'q':
+                print("Goodbye! 👋")
+                sys.exit(0)
+            elif choice == '1':
+                self._handle_ratings_fetch()
+                input("\\nPress Enter to continue...")
+            elif choice == '2':
+                self._handle_ratings_stats()
+                input("\\nPress Enter to continue...")
+            elif choice == '3':
+                # Use default thresholds
+                class MockArgs:
+                    imdb_threshold = 5.0
+                    rt_threshold = 30
+                    meta_threshold = 40
+                self._handle_ratings_bad_movies(MockArgs())
+                input("\\nPress Enter to continue...")
+            elif choice == '4':
+                class MockArgs:
+                    imdb_threshold = 5.0
+                    rt_threshold = 30
+                    meta_threshold = 40
+                self._handle_ratings_delete_bad(MockArgs())
+                input("\\nPress Enter to continue...")
+            else:
+                print("❌ Invalid choice. Please try again.")
+            
+            print()
+    
+    def _format_file_size(self, size_bytes: int) -> str:
+        """Format file size in human-readable format."""
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.1f} PB"
     
     # TV command handlers
     def _handle_tv_organize(self, args) -> int:
@@ -2383,6 +3229,90 @@ Version: """ + __version__
             
         except Exception as e:
             print(f"❌ Error checking system status: {e}")
+            return 1
+    
+    def _handle_media_enrich(self, args) -> int:
+        """Handle media enrich command."""
+        try:
+            from ..plex.utils.metadata_enrichment import MetadataEnricher
+            
+            print("🎬 Media Metadata Enrichment Tool")
+            print("=" * 40)
+            
+            # Handle stats display
+            if args.stats:
+                enricher = MetadataEnricher()
+                stats = enricher.cache.get_stats()
+                print("\nMetadata Cache Statistics:")
+                print(f"Total items: {stats['total_items']}")
+                print("\nBy type:")
+                for media_type, count in stats['by_type'].items():
+                    print(f"  {media_type}: {count}")
+                print("\nBy source:")
+                for source, count in stats['by_source'].items():
+                    print(f"  {source}: {count}")
+                return 0
+            
+            # Handle single title test
+            if args.test:
+                enricher = MetadataEnricher()
+                title, year = enricher.extract_title_and_year(args.test)
+                print(f"Testing enrichment for: {title} ({year})")
+                metadata = enricher.enrich_title(title, year)
+                if metadata:
+                    print(f"Result: {metadata.media_type} (confidence: {metadata.confidence:.2f})")
+                    print(f"Genres: {metadata.genres}")
+                    if metadata.overview:
+                        print(f"Overview: {metadata.overview[:100]}...")
+                else:
+                    print("No metadata found")
+                return 0
+            
+            # Run full enrichment
+            print("This tool will query external APIs (TMDB, TVDB) to enrich your media database")
+            print("with accurate metadata for improved classification.")
+            print()
+            
+            if args.limit:
+                print(f"Processing limit: {args.limit} items")
+            if args.force:
+                print("Force mode: Re-enriching cached items")
+            print()
+            
+            confirm = input("Proceed with metadata enrichment? (y/n): ").strip().lower()
+            if confirm != 'y':
+                print("Enrichment cancelled")
+                return 0
+            
+            print("\n🚀 Starting metadata enrichment...")
+            
+            enricher = MetadataEnricher()
+            results = enricher.enrich_database(
+                limit=args.limit,
+                skip_cached=not args.force
+            )
+            
+            print(f"\n✅ Enrichment completed!")
+            print(f"📊 Results:")
+            for key, value in results.items():
+                print(f"   {key.replace('_', ' ').title()}: {value}")
+            
+            # Show updated cache stats
+            stats = enricher.cache.get_stats()
+            print(f"\n📈 Updated Cache Statistics:")
+            print(f"   Total items: {stats['total_items']}")
+            print(f"   By type: {dict(stats['by_type'])}")
+            
+            print(f"\n💡 TIP: Use 'plex-cli files reorganize' with enhanced classification")
+            
+            return 0
+            
+        except ImportError as e:
+            print(f"❌ Metadata enrichment not available: {e}")
+            print("   Make sure the metadata_enrichment module is properly installed.")
+            return 1
+        except Exception as e:
+            print(f"❌ Error during metadata enrichment: {e}")
             return 1
     
     # Helper methods for Phase 2 features

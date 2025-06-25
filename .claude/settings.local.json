@@ -24,7 +24,12 @@
       "Bash(chmod:*)",
       "Bash(git add:*)",
       "Bash(source ~/.bashrc)",
-      "Bash(alias plex-cli)"
+      "Bash(alias plex-cli)",
+      "Bash(git commit:*)",
+      "Bash(rg:*)",
+      "Bash(true)",
+      "Bash(sqlite3:*)",
+      "Bash(echo)"
     ],
     "deny": []
   }
