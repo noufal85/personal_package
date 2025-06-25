@@ -298,38 +298,56 @@ def print_move_analysis(analysis: TVMoveAnalysis, dry_run: bool = True) -> None:
     for move in analysis.moves:
         moves_by_show[move.show_name].append(move)
     
-    print(f"\nPLANNED ACTIONS:")
-    print("=" * 60)
+    print(f"\n📺 EPISODE MOVES - WHAT'S MOVING WHERE:")
+    print("=" * 70)
     
+    # Show a clear summary first
+    if analysis.moves:
+        print(f"📊 MOVE SUMMARY:")
+        print(f"   • {len(analysis.moves)} episodes will be moved")
+        print(f"   • {len(moves_by_show)} shows affected")
+        print(f"   • {format_file_size(analysis.total_size)} of data")
+        if len(analysis.new_folders_needed) > 0:
+            print(f"   • {len(analysis.new_folders_needed)} new show folders will be created")
+        print()
+    
+    # Show detailed moves by show
     for show_name, moves in sorted(moves_by_show.items()):
         show_size = sum(move.size for move in moves)
-        print(f"\n{show_name}")
-        print(f"   Episodes: {len(moves)}")
-        print(f"   Total size: {format_file_size(show_size)}")
+        print(f"🎬 {show_name}")
+        print(f"   📊 {len(moves)} episodes ({format_file_size(show_size)})")
         
         # Check if folder needs to be created
         create_folder = any(move.action == 'create_folder_and_move' for move in moves)
         if create_folder:
             folder_path = moves[0].target_path.parent
-            print(f"   Action: CREATE new folder '{folder_path.name}'")
-            print(f"      Path: {folder_path}")
+            print(f"   📁 CREATE new folder: {folder_path}")
         else:
             existing_folder = moves[0].target_path.parent
-            print(f"   Action: MOVE to existing folder '{existing_folder.name}'")
-            print(f"      Path: {existing_folder}")
+            print(f"   📂 MOVE to existing: {existing_folder}")
         
-        print(f"   Episodes that {action_text} moved:")
+        # Show source locations being moved from
+        source_dirs = set(move.source_path.parent for move in moves)
+        if len(source_dirs) == 1:
+            print(f"   📤 FROM: {list(source_dirs)[0]}")
+        else:
+            print(f"   📤 FROM multiple locations:")
+            for source_dir in sorted(source_dirs):
+                move_count = len([m for m in moves if m.source_path.parent == source_dir])
+                print(f"      • {source_dir} ({move_count} episodes)")
         
-        # Sort episodes by season/episode
+        # Show sample episodes with clear before/after
+        print(f"   📋 Sample episodes:")
         sorted_moves = sorted(moves, key=lambda x: (x.season, x.episode))
-        for move in sorted_moves[:10]:  # Show first 10
-            print(f"      S{move.season:02d}E{move.episode:02d} - {move.source_path.name}")
-            print(f"        FROM: {move.source_path.parent}")
-            print(f"        TO:   {move.target_path.parent}")
-            print(f"        Size: {format_file_size(move.size)}")
+        for i, move in enumerate(sorted_moves[:5], 1):  # Show first 5
+            episode_info = f"S{move.season:02d}E{move.episode:02d}"
+            print(f"      {i}. {episode_info} - {move.source_path.name}")
+            print(f"         FROM: {move.source_path.parent}")
+            print(f"         TO:   {move.target_path.parent}")
         
-        if len(moves) > 10:
-            print(f"      ... and {len(moves) - 10} more episodes")
+        if len(moves) > 5:
+            print(f"      ... and {len(moves) - 5} more episodes")
+        print()
     
     # Summary of new folders
     if analysis.new_folders_needed:
@@ -348,33 +366,69 @@ def print_move_analysis(analysis: TVMoveAnalysis, dry_run: bool = True) -> None:
     print(f"   Total episodes to organize: {len(analysis.moves)}")
     print(f"   Total data to move: {format_file_size(analysis.total_size)}")
     
-    # Show small folders section
+    # Show small folders section with clear separation
     if analysis.small_folders:
-        print(f"\nSMALL FOLDERS THAT {action_text.upper()} DELETED:")
-        print("=" * 60)
+        print(f"\n🗑️  SMALL FOLDERS TO BE DELETED (CLEANUP):")
+        print("=" * 70)
+        print(f"ℹ️  These are small folders (<100MB) that will be deleted:")
+        print()
         
         # Sort by size (smallest first)
         sorted_small_folders = sorted(analysis.small_folders, key=lambda x: x.size)
         
-        for i, folder in enumerate(sorted_small_folders, 1):
-            print(f"{i:2d}. {folder.path.name}")
-            print(f"    Size: {format_file_size(folder.size)}")
-            print(f"    Files: {folder.file_count}")
-            print(f"    Path: {folder.path}")
+        # Show first 10 with more details, then summarize
+        for i, folder in enumerate(sorted_small_folders[:10], 1):
+            if folder.size == 0:
+                print(f"{i:2d}. 📭 {folder.path.name} (EMPTY)")
+            else:
+                print(f"{i:2d}. 📁 {folder.path.name}")
+            print(f"    📊 Size: {format_file_size(folder.size)}")
+            print(f"    📄 Files: {folder.file_count}")
+            print(f"    📂 Path: {folder.path}")
+            print()
+        
+        if len(analysis.small_folders) > 10:
+            remaining = len(analysis.small_folders) - 10
+            remaining_size = sum(f.size for f in sorted_small_folders[10:])
+            print(f"... and {remaining} more small folders ({format_file_size(remaining_size)})")
             print()
         
         small_folders_size = sum(folder.size for folder in analysis.small_folders)
-        print(f"Total size to be freed: {format_file_size(small_folders_size)}")
+        print(f"🗃️  Total cleanup: {format_file_size(small_folders_size)} in {len(analysis.small_folders)} folders")
+        print()
+        print("⚠️  NOTE: These are separate from the episode moves above!")
+        print("   Episodes are MOVED to proper locations, small folders are DELETED.")
+    
+    # Clear final summary
+    print(f"\n" + "=" * 70)
+    print(f"📋 ORGANIZATION SUMMARY")
+    print(f"=" * 70)
+    
+    if analysis.moves:
+        print(f"📺 EPISODE MOVES:")
+        print(f"   • {len(analysis.moves)} TV episodes will be MOVED to proper show folders")
+        print(f"   • {format_file_size(analysis.total_size)} of video content will be organized")
+        print(f"   • {len(moves_by_show)} shows will be organized")
+        if len(analysis.new_folders_needed) > 0:
+            print(f"   • {len(analysis.new_folders_needed)} new show folders will be created")
+    
+    if analysis.small_folders:
+        small_folders_size = sum(folder.size for folder in analysis.small_folders)
+        print(f"\n🗑️  CLEANUP:")
+        print(f"   • {len(analysis.small_folders)} small/empty folders will be DELETED")
+        print(f"   • {format_file_size(small_folders_size)} of cleanup space will be freed")
     
     if dry_run:
-        print(f"\nTHIS IS A DRY RUN - NO FILES WILL BE MOVED OR DELETED")
-        print(f"   Use --execute to actually perform the moves and deletions")
-        if analysis.moves:
-            print(f"   NOTE: After moves, empty/small folders (<100MB) will be automatically cleaned up")
+        print(f"\n🔍 THIS IS PREVIEW MODE - NO CHANGES WILL BE MADE")
+        print(f"   Use --execute mode to actually perform the organization")
     else:
-        print(f"\nFILES WILL BE MOVED AND FOLDERS DELETED - MAKE SURE YOU HAVE BACKUPS!")
-        if analysis.moves:
-            print(f"   NOTE: Empty/small folders (<100MB) will be automatically cleaned up after moves")
+        print(f"\n⚠️  EXECUTION MODE - CHANGES WILL BE MADE!")
+        print(f"   📺 Episodes will be MOVED to proper show folders")
+        if analysis.small_folders:
+            print(f"   🗑️  Small folders will be DELETED")
+        print(f"   💾 Make sure you have BACKUPS before proceeding!")
+    
+    print(f"=" * 70)
 
 
 def delete_small_folders(small_folders: List[SmallFolder]) -> Tuple[int, int]:
