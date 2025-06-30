@@ -346,10 +346,13 @@ class MediaDatabase:
         query_normalized = query.lower().strip()
         matches = []
         
+        # Use lower threshold for TV searches to handle partial matches
+        threshold = 0.3 if len(query_normalized) <= 4 else 0.35
+        
         for normalized_name, show in self.data["tv_shows"].items():
-            # Calculate similarity score
-            score = self._calculate_similarity(normalized_name, query_normalized)
-            if score > 0.5:  # Minimum threshold
+            # Calculate similarity score with enhanced matching
+            score = self._calculate_tv_similarity(normalized_name, query_normalized)
+            if score > threshold:
                 show_match = show.copy()
                 show_match["confidence"] = score
                 show_match["media_type"] = "tv"
@@ -444,6 +447,79 @@ class MediaDatabase:
             return min(0.9, intersection / len(words2))
         
         return intersection / union if union > 0 else 0.0
+    
+    def _calculate_tv_similarity(self, text1: str, text2: str) -> float:
+        """
+        Calculate similarity for TV shows with enhanced partial matching.
+        
+        Args:
+            text1: Target show name (from database)
+            text2: Search query
+            
+        Returns:
+            Similarity score between 0.0 and 1.0
+        """
+        if not text1 or not text2:
+            return 0.0
+        
+        # Exact match
+        if text1 == text2:
+            return 1.0
+        
+        # Substring match - check if query is contained in show name
+        if text2 in text1:
+            # For short queries (like "kin"), give a good score if it's a significant match
+            if len(text2) <= 4:
+                # Check if it's at word boundaries for better relevance
+                words1 = text1.split()
+                for word in words1:
+                    if text2 in word:
+                        # Higher score if query makes up significant portion of a word
+                        word_ratio = len(text2) / len(word)
+                        if word_ratio >= 0.5:  # e.g., "kin" in "king" or "vikings"
+                            return 0.8
+                        else:
+                            return 0.6
+                # Fallback for general substring match
+                return 0.5
+            else:
+                # For longer queries, use length-based scoring
+                ratio = len(text2) / len(text1)
+                return min(0.9, ratio * 1.2)
+        
+        # Check if show name contains query as substring
+        if text1 in text2:
+            ratio = len(text1) / len(text2)
+            return min(0.8, ratio * 1.1)
+        
+        # Word-level matching
+        words1 = set(text1.split())
+        words2 = set(text2.split())
+        
+        if not words1 or not words2:
+            return 0.0
+        
+        intersection = len(words1.intersection(words2))
+        union = len(words1.union(words2))
+        
+        # Boost score if all query words are present in target
+        if words2.issubset(words1):
+            return min(0.9, intersection / len(words1))
+        
+        # Check for partial word matches within the words
+        partial_matches = 0
+        for query_word in words2:
+            for target_word in words1:
+                if len(query_word) >= 3 and query_word in target_word:
+                    partial_matches += 0.5
+                elif len(target_word) >= 3 and target_word in query_word:
+                    partial_matches += 0.3
+        
+        # Combine exact word matches with partial matches
+        word_score = intersection / union if union > 0 else 0.0
+        partial_score = min(partial_matches / len(words2), 0.7)
+        
+        return max(word_score, partial_score)
     
     def get_all_movies(self) -> List[MovieEntry]:
         """
